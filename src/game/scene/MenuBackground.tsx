@@ -4,6 +4,7 @@ import { Environment, Lightformer } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { makeMarbleMaterial } from "./marbleMaterial";
+import { makeGradientTexture } from "./textures";
 
 const LAYOUT = [
   { color: "#F24447", x: -6.2, y: 2.4, z: 0.0, r: 1.7, spd: 0.5 },
@@ -50,8 +51,8 @@ function Scene() {
         <FloatingMarble key={i} d={d} i={i} />
       ))}
       <EffectComposer multisampling={0} enableNormalPass={false}>
-        <Bloom intensity={1.0} luminanceThreshold={0.5} luminanceSmoothing={0.2} mipmapBlur radius={0.7} />
-        <Vignette eskil={false} offset={0.2} darkness={1.0} />
+        <Bloom intensity={1.0} luminanceThreshold={0.55} luminanceSmoothing={0.2} mipmapBlur radius={0.7} />
+        <Vignette eskil={false} offset={0.35} darkness={0.5} />
       </EffectComposer>
     </>
   );
@@ -66,8 +67,13 @@ export function MenuBackground() {
         gl={{ antialias: true, powerPreference: "high-performance" }}
         onCreated={({ gl, scene }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
-          gl.toneMappingExposure = 1.1;
-          scene.fog = new THREE.Fog("#070810", 14, 30);
+          gl.toneMappingExposure = 1.25;
+          scene.background = makeGradientTexture([
+            [0, "#4a2f7a"],
+            [0.5, "#2b2f74"],
+            [1, "#141a42"],
+          ]);
+          scene.fog = new THREE.Fog("#26285c", 16, 34);
         }}
       >
         <Scene />

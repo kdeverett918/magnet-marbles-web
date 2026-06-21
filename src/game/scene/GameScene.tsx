@@ -8,6 +8,7 @@ import { getWorld, useGame, type Hud } from "../store";
 import { input, clearEdges, setTouchMagnet } from "../input/controls";
 import { sfx } from "../audio/sfx";
 import type { PowerupType } from "../data/types";
+import { makeGradientTexture } from "./textures";
 import { Table } from "./Table";
 import { Marbles } from "./Marbles";
 import { Players } from "./Players";
@@ -15,6 +16,7 @@ import { Goals } from "./Goals";
 import { Pickups } from "./Pickups";
 import { Obstacles } from "./Obstacles";
 import { Particles, type ParticlesHandle } from "./Particles";
+import { AmbientMotes } from "./Ambient";
 
 const BUFFS: PowerupType[] = ["superMagnet", "doubleScore", "turbo", "disableMagnet"];
 
@@ -151,18 +153,24 @@ export function GameScene() {
       gl={{ antialias: true, powerPreference: "high-performance" }}
       onCreated={({ gl, scene }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
-        gl.toneMappingExposure = 1.15;
-        scene.background = new THREE.Color("#070810");
-        scene.fog = new THREE.Fog("#070810", 38, 70);
+        gl.toneMappingExposure = 1.3;
+        // vibrant arcade sky — brighter, less dark
+        scene.background = makeGradientTexture([
+          [0, "#3a2f6b"],
+          [0.45, "#27306a"],
+          [1, "#121a40"],
+        ]);
+        scene.fog = new THREE.Fog("#222a5a", 48, 92);
       }}
     >
       <GameLoop particles={particles} />
 
-      {/* lighting */}
-      <ambientLight intensity={0.35} color="#9fb0d0" />
+      {/* lighting — bright, colorful arcade key/fill/rim */}
+      <ambientLight intensity={0.7} color="#aebbff" />
+      <hemisphereLight args={["#cfd8ff", "#3a2a4a", 0.6]} />
       <directionalLight
         position={[10, 24, 12]}
-        intensity={1.6}
+        intensity={1.9}
         color="#fff2e0"
         castShadow
         shadow-mapSize={[1024, 1024]}
@@ -172,7 +180,8 @@ export function GameScene() {
         shadow-camera-bottom={-20}
         shadow-bias={-0.0004}
       />
-      <directionalLight position={[-12, 10, -8]} intensity={0.5} color="#5577ff" />
+      <directionalLight position={[-12, 10, -8]} intensity={0.8} color="#5fa0ff" />
+      <directionalLight position={[0, 8, -16]} intensity={0.7} color="#ff7ad0" />
 
       {/* baked studio reflections for the glossy marbles (no external HDR fetch) */}
       <Environment resolution={64} frames={1}>
@@ -190,11 +199,12 @@ export function GameScene() {
       <Players world={world} />
       <Pickups world={world} />
       <Particles ref={particles} />
+      {quality === "high" && <AmbientMotes />}
 
       {quality === "high" && (
         <EffectComposer multisampling={0} enableNormalPass={false}>
-          <Bloom intensity={1.15} luminanceThreshold={0.5} luminanceSmoothing={0.22} mipmapBlur radius={0.75} />
-          <Vignette eskil={false} offset={0.22} darkness={0.9} />
+          <Bloom intensity={1.1} luminanceThreshold={0.55} luminanceSmoothing={0.22} mipmapBlur radius={0.75} />
+          <Vignette eskil={false} offset={0.3} darkness={0.55} />
         </EffectComposer>
       )}
     </Canvas>

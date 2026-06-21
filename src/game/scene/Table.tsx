@@ -51,7 +51,7 @@ export function Table({ world }: { world: World }) {
       {/* textured playable top */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.001, 0]} receiveShadow>
         <circleGeometry args={[R * 0.997, 96]} />
-        <meshStandardMaterial map={map} roughnessMap={rough} color="#9aa0ae" roughness={1} metalness={0.2} />
+        <meshStandardMaterial map={map} roughnessMap={rough} color="#c2c8d8" roughness={0.85} metalness={0.25} />
       </mesh>
 
       {/* faint concentric gold guide rings */}

@@ -41,6 +41,21 @@ function fbm(x: number, y: number, oct: number): number {
   return sum / norm;
 }
 
+/** Vibrant vertical gradient backdrop (arcade sky) used as scene.background. */
+export function makeGradientTexture(stops: [number, string][]): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = 8;
+  c.height = 256;
+  const ctx = c.getContext("2d")!;
+  const grad = ctx.createLinearGradient(0, 0, 0, 256);
+  for (const [pos, col] of stops) grad.addColorStop(pos, col);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 8, 256);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 let cached: { map: THREE.CanvasTexture; rough: THREE.CanvasTexture } | null = null;
 
 /** Slate/marble albedo + roughness maps for the arena surface. */

@@ -1,5 +1,6 @@
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
+import { Trail } from "@react-three/drei";
 import * as THREE from "three";
 import type { World } from "../sim/world";
 import { CONFIG } from "../data/config";
@@ -57,8 +58,15 @@ function PlayerMarble({ world, id }: { world: World; id: number }) {
   return (
     <>
       <group ref={group}>
-        <mesh ref={ball} castShadow material={mat}>
-          <sphereGeometry args={[p.radius, 48, 32]} />
+        <Trail width={p.radius * 4.5} length={4} color={p.colorHex} attenuation={(t) => t * t} decay={1.4}>
+          <mesh ref={ball} castShadow material={mat}>
+            <sphereGeometry args={[p.radius, 48, 32]} />
+          </mesh>
+        </Trail>
+        {/* persistent colored ground glow */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -p.radius + 0.04, 0]}>
+          <circleGeometry args={[p.radius * 1.5, 28]} />
+          <meshBasicMaterial color={p.colorHex} transparent opacity={0.22} blending={THREE.AdditiveBlending} depthWrite={false} />
         </mesh>
         {/* magnet ring (ground-projected) */}
         <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -p.radius + 0.05, 0]} visible={false}>
