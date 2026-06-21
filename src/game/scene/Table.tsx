@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import * as THREE from "three";
 import { CONFIG } from "../data/config";
-import type { World } from "../sim/world";
+import type { Arena } from "../sim/arena";
 import { getStoneTextures } from "./textures";
 
 const R = CONFIG.tableRadius;
@@ -13,7 +13,7 @@ function goldMat(emissive = 0.25) {
   );
 }
 
-export function Table({ world }: { world: World }) {
+export function Table({ world }: { world: Arena }) {
   const goals = world.goals;
   const { map, rough } = useMemo(() => getStoneTextures(), []);
 

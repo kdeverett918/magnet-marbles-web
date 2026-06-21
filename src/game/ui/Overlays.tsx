@@ -4,6 +4,8 @@ export function Overlays() {
   const hud = useGame((s) => s.hud);
   const quitToMenu = useGame((s) => s.quitToMenu);
   const startGame = useGame((s) => s.startGame);
+  const startOnline = useGame((s) => s.startOnline);
+  const online = useGame((s) => s.online);
   const modeId = useGame((s) => s.modeId);
   const playerCount = useGame((s) => s.playerCount);
 
@@ -23,7 +25,7 @@ export function Overlays() {
     const sorted = [...hud.players].sort((a, b) => b.score - a.score);
     const isMatch = hud.phase === "matchEnd";
     const winner = sorted[0];
-    const youWon = isMatch && winner?.id === 0;
+    const youWon = isMatch && winner?.id === hud.humanId;
 
     return (
       <div className="overlay">
@@ -48,7 +50,7 @@ export function Overlays() {
               <div key={p.id} className={`standing ${i === 0 ? "first" : ""}`}>
                 <span className="rank">{i + 1}</span>
                 <span className="dot" style={{ background: p.colorHex, color: p.colorHex }} />
-                <span className="nm">{p.id === 0 ? "You" : p.name}</span>
+                <span className="nm">{p.id === hud.humanId ? "You" : p.name}{p.isBot ? " 🤖" : ""}</span>
                 <span className="sc">{p.score}</span>
               </div>
             ))}
@@ -56,9 +58,13 @@ export function Overlays() {
 
           {isMatch ? (
             <div className="row">
-              <button className="btn primary" onClick={() => startGame(modeId, playerCount)}>↻ Rematch</button>
+              <button className="btn primary" onClick={() => (online ? startOnline(modeId) : startGame(modeId, playerCount))}>
+                ↻ Play Again
+              </button>
               <button className="btn" onClick={quitToMenu}>Menu</button>
             </div>
+          ) : online ? (
+            <div className="row"><span className="sub">Next round starting…</span></div>
           ) : (
             <div className="row">
               <button className="btn primary" onClick={() => getWorld()?.forceAdvance()}>

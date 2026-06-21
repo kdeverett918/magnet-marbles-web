@@ -1,12 +1,12 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import type { World } from "../sim/world";
+import type { Arena } from "../sim/arena";
 
 const dummy = new THREE.Object3D();
 const col = new THREE.Color();
 
-export function Marbles({ world }: { world: World }) {
+export function Marbles({ world }: { world: Arena }) {
   const count = world.marbles.length;
   const ref = useRef<THREE.InstancedMesh>(null);
   const halo = useRef<THREE.InstancedMesh>(null);

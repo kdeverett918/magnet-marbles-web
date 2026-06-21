@@ -1,9 +1,9 @@
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import type { World } from "../sim/world";
+import type { Arena } from "../sim/arena";
 
-export function Goals({ world }: { world: World }) {
+export function Goals({ world }: { world: Arena }) {
   return (
     <group>
       {world.goals.map((g) => (
@@ -13,7 +13,7 @@ export function Goals({ world }: { world: World }) {
   );
 }
 
-function GoalBowl({ world, ownerId }: { world: World; ownerId: number }) {
+function GoalBowl({ world, ownerId }: { world: Arena; ownerId: number }) {
   const goal = world.goals[ownerId];
   const color = goal.colorHex;
   const funnel = useRef<THREE.Group>(null);
@@ -37,7 +37,8 @@ function GoalBowl({ world, ownerId }: { world: World; ownerId: number }) {
 
   useFrame((_, dt) => {
     const t = world.time;
-    const blocked = world.time < goal.blockedUntil;
+    const g = world.goals[ownerId] ?? goal; // read fresh (NetView rebuilds goals)
+    const blocked = world.time < g.blockedUntil;
     if (funnel.current) funnel.current.rotation.y += dt * (blocked ? 0.3 : 1.6);
     if (core.current) {
       const m = core.current.material as THREE.MeshBasicMaterial;

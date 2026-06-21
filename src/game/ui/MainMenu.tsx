@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useGame } from "../store";
 import { MODES } from "../data/config";
 import { sfx } from "../audio/sfx";
@@ -18,14 +19,24 @@ function Letters({ word, colors }: { word: string; colors: string[] }) {
 }
 
 export function MainMenu() {
-  const { modeId, playerCount, settings, setMode, setPlayerCount, startGame, toggleSound, setQuality } =
+  const { modeId, playerCount, settings, net, setMode, setPlayerCount, startGame, startOnline, toggleSound, setQuality } =
     useGame();
+  const [showRoom, setShowRoom] = useState(false);
+  const [roomCode, setRoomCode] = useState("");
 
-  const play = () => {
+  const prime = () => {
     sfx.ensure();
     sfx.setEnabled(settings.sound);
+  };
+  const playSolo = () => {
+    prime();
     startGame(modeId, playerCount);
   };
+  const playOnline = () => {
+    prime();
+    startOnline(modeId, roomCode.trim() || undefined);
+  };
+  const connecting = net.status === "connecting";
 
   return (
     <div className="menu">
@@ -90,9 +101,30 @@ export function MainMenu() {
           </div>
         </div>
 
-        <button className="btn primary play-btn" onClick={play}>
-          ▶ PLAY
-        </button>
+        <div className="play-row">
+          <button className="btn primary play-btn" onClick={playSolo} disabled={connecting}>
+            ▶ SINGLE PLAYER
+          </button>
+          <button className="btn play-btn online" onClick={playOnline} disabled={connecting}>
+            {connecting ? "CONNECTING…" : "🌐 PLAY ONLINE"}
+          </button>
+        </div>
+
+        <div className="online-row">
+          <button className="chip" onClick={() => setShowRoom((v) => !v)}>
+            {showRoom ? "▾ Private room" : "▸ Join with code"}
+          </button>
+          {showRoom && (
+            <input
+              className="room-input"
+              placeholder="room code"
+              value={roomCode}
+              onChange={(e) => setRoomCode(e.target.value)}
+              maxLength={12}
+            />
+          )}
+          {net.status === "error" && <span className="net-err">⚠ {net.error}</span>}
+        </div>
 
         <div className="menu-foot">
           <kbd>WASD</kbd> move · <kbd>Space</kbd> magnet · <kbd>Shift</kbd> dash · <kbd>E</kbd> powerup

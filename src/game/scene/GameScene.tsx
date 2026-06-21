@@ -36,9 +36,10 @@ function GameLoop({ particles }: { particles: React.RefObject<ParticlesHandle> }
     if (!world) return;
     const dt = Math.min(dtRaw, 0.05);
 
-    // feed human input (player 0)
+    // feed the local human's input (slot = humanId; 0 for single-player)
+    const hid = world.humanId;
     setTouchMagnet(input.magnet);
-    world.setInput(0, {
+    world.setInput(hid, {
       moveX: input.moveX,
       moveZ: input.moveZ,
       magnet: input.magnet,
@@ -46,6 +47,7 @@ function GameLoop({ particles }: { particles: React.RefObject<ParticlesHandle> }
       activate: input.activate,
     });
     clearEdges();
+    world.flushInput(dt); // no-op locally; sends to server when online
 
     // intro countdown beeps
     if (world.phase === "intro") {
@@ -66,7 +68,7 @@ function GameLoop({ particles }: { particles: React.RefObject<ParticlesHandle> }
     }
 
     // ambient music intensity scales with action
-    const human = world.players[0];
+    const human = world.players[hid] ?? world.players[0];
     const intensity = world.phase === "playing" ? 0.4 + Math.min(human?.cluster.length ?? 0, 18) / 36 : 0.1;
     sfx.music(dt, intensity);
 
@@ -109,7 +111,7 @@ function GameLoop({ particles }: { particles: React.RefObject<ParticlesHandle> }
 
 function buildHud(world: ReturnType<typeof getWorld>): Hud {
   const w = world!;
-  const human = w.players[0];
+  const human = w.players[w.humanId] ?? w.players[0];
   const active = BUFFS.filter((t) => (human?.activeUntil[t] ?? 0) > w.time).map((t) => ({
     type: t,
     remaining: (human!.activeUntil[t] ?? 0) - w.time,
@@ -122,6 +124,7 @@ function buildHud(world: ReturnType<typeof getWorld>): Hud {
     introCountdown: w.introCountdown,
     suddenDeath: w.suddenDeath,
     winnerId: w.winnerId,
+    humanId: w.humanId,
     players: w.players.map((p) => ({
       id: p.id,
       name: p.name,

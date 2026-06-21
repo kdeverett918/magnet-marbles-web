@@ -19,7 +19,7 @@ export function Hud() {
       <div className="topbar">
         <div className="scoreboard">
           {hud.players.map((p) => (
-            <ScorePill key={p.id} id={p.id} name={p.isBot ? p.name : "You"} color={p.colorHex} score={p.score} you={p.id === 0} />
+            <ScorePill key={p.id} id={p.id} name={p.id === hud.humanId ? "You" : p.name} color={p.colorHex} score={p.score} you={p.id === hud.humanId} />
           ))}
         </div>
 

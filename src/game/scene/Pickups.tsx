@@ -1,10 +1,10 @@
 import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import type { World } from "../sim/world";
+import type { Arena } from "../sim/arena";
 import { POWERUP_META } from "../data/config";
 
-export function Pickups({ world }: { world: World }) {
+export function Pickups({ world }: { world: Arena }) {
   return (
     <group>
       {world.pickups.map((pk) => (
@@ -14,7 +14,7 @@ export function Pickups({ world }: { world: World }) {
   );
 }
 
-function PickupToken({ world, idx }: { world: World; idx: number }) {
+function PickupToken({ world, idx }: { world: Arena; idx: number }) {
   const ref = useRef<THREE.Group>(null);
   const inner = useRef<THREE.Mesh>(null);
 

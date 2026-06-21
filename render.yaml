@@ -1,5 +1,21 @@
-# Render Blueprint — Magnet Marbles web build (static site, auto-deploy from main)
+# Render Blueprint — Magnet Marbles
+# Two services: the authoritative Colyseus server (Node web service) and the
+# static client (Vite SPA). Client connects to the server over wss.
 services:
+  # --- Authoritative multiplayer server ---
+  - type: web
+    runtime: node
+    name: magnet-marbles-server
+    repo: https://github.com/kdeverett918/magnet-marbles-web
+    branch: main
+    rootDir: server
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+
+  # --- Static client (Vite SPA) ---
   - type: web
     runtime: static
     name: magnet-marbles
@@ -8,10 +24,10 @@ services:
     buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
     pullRequestPreviewsEnabled: true
+    envVars:
+      - key: VITE_SERVER_URL
+        value: wss://magnet-marbles-server.onrender.com
     headers:
-      - path: /*
-        name: Cache-Control
-        value: no-cache
       - path: /assets/*
         name: Cache-Control
         value: public, max-age=31536000, immutable

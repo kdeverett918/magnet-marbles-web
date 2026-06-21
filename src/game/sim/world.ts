@@ -52,6 +52,7 @@ export class World {
   rings: AutoGoalRing[] = [];
 
   phase: RoundPhase = "menu";
+  humanId = 0; // which slot the local human controls (0 for single-player)
   round = 1;
   roundTime = 0; // seconds remaining
   introCountdown = 0;
@@ -1055,6 +1056,11 @@ export class World {
     const out = this.fx;
     this.fx = [];
     return out;
+  }
+
+  /** No-op locally; NetView uses this to flush input to the server. */
+  flushInput(_dt: number) {
+    void _dt;
   }
 }
 

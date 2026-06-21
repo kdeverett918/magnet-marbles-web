@@ -1,9 +1,9 @@
 import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import type { World } from "../sim/world";
+import type { Arena } from "../sim/arena";
 
-export function Obstacles({ world }: { world: World }) {
+export function Obstacles({ world }: { world: Arena }) {
   return (
     <group>
       {world.buttons.map((b) => (
@@ -16,7 +16,7 @@ export function Obstacles({ world }: { world: World }) {
   );
 }
 
-function GoalButtonViz({ world, idx }: { world: World; idx: number }) {
+function GoalButtonViz({ world, idx }: { world: Arena; idx: number }) {
   const top = useRef<THREE.Mesh>(null);
   const b = world.buttons[idx];
   const color = world.goals[b.targetGoalOwnerId]?.colorHex ?? "#ffffff";
@@ -49,7 +49,7 @@ function GoalButtonViz({ world, idx }: { world: World; idx: number }) {
   );
 }
 
-function AutoGoalRingViz({ world, idx }: { world: World; idx: number }) {
+function AutoGoalRingViz({ world, idx }: { world: Arena; idx: number }) {
   const arrows = useRef<THREE.Group>(null);
   const r = world.rings[idx];
 

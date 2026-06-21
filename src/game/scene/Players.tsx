@@ -2,11 +2,11 @@ import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Trail } from "@react-three/drei";
 import * as THREE from "three";
-import type { World } from "../sim/world";
+import type { Arena } from "../sim/arena";
 import { CONFIG } from "../data/config";
 import { makeMarbleMaterial } from "./marbleMaterial";
 
-export function Players({ world }: { world: World }) {
+export function Players({ world }: { world: Arena }) {
   return (
     <group>
       {world.players.map((p) => (
@@ -16,7 +16,7 @@ export function Players({ world }: { world: World }) {
   );
 }
 
-function PlayerMarble({ world, id }: { world: World; id: number }) {
+function PlayerMarble({ world, id }: { world: Arena; id: number }) {
   const p = world.players[id];
   const group = useRef<THREE.Group>(null);
   const ball = useRef<THREE.Mesh>(null);

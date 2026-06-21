@@ -150,7 +150,18 @@ html, body, #root {
 }
 .chip:hover { background: rgba(255,255,255,0.12); }
 .chip.active { background: linear-gradient(180deg, rgba(255,255,255,0.28), rgba(255,255,255,0.1)); border-color: rgba(255,255,255,0.5); }
-.play-btn { font-size: 20px; padding: 17px 56px; border-radius: 18px; }
+.play-btn { font-size: 18px; padding: 16px 34px; border-radius: 18px; }
+.play-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.play-btn.online { background: linear-gradient(180deg, rgba(86,160,255,0.35), rgba(40,90,200,0.25)); border-color: rgba(120,180,255,0.5); }
+.play-btn:disabled { opacity: 0.55; cursor: default; }
+.online-row { display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; min-height: 22px; }
+.room-input {
+  background: rgba(0,0,0,0.3); border: 1.5px solid var(--stroke); border-radius: 999px;
+  color: var(--text); padding: 9px 16px; font-weight: 700; font-size: 14px; width: 150px; text-align: center;
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+.room-input:focus { outline: none; border-color: rgba(120,180,255,0.6); }
+.net-err { color: #ff8a7a; font-size: 13px; font-weight: 700; }
 
 .menu-foot { color: var(--muted); font-size: 12px; }
 .menu-foot kbd {
