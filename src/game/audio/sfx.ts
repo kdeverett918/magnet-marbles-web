@@ -4,6 +4,10 @@ import type { FxEvent } from "../data/types";
  * Tiny synthesized sound engine — zero audio assets, all WebAudio.
  * Lazily created on first user gesture (browser autoplay policy).
  */
+// Suno-generated arcade music bed (instrumental). Falls back to the synth
+// arpeggio if the file fails to load.
+const MUSIC_URL = "./audio/music.mp3";
+
 class SfxEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -11,15 +15,19 @@ class SfxEngine {
   private enabled = true;
   private musicTimer = 0;
   private musicStep = 0;
+  private musicEl: HTMLAudioElement | null = null;
+  private realMusic = false;
 
   setEnabled(on: boolean) {
     this.enabled = on;
     if (this.master) this.master.gain.value = on ? 0.9 : 0;
+    if (this.musicEl) this.musicEl.muted = !on;
   }
 
   ensure() {
     if (this.ctx) {
       if (this.ctx.state === "suspended") void this.ctx.resume();
+      this.startMusic();
       return;
     }
     const Ctor = window.AudioContext || (window as any).webkitAudioContext;
@@ -31,6 +39,27 @@ class SfxEngine {
     this.musicGain = this.ctx.createGain();
     this.musicGain.gain.value = 0.16;
     this.musicGain.connect(this.master);
+    this.startMusic();
+  }
+
+  /** Lazy-load the looping music track (needs a prior user gesture). */
+  private startMusic() {
+    if (this.musicEl) {
+      if (this.enabled && this.musicEl.paused) void this.musicEl.play().catch(() => undefined);
+      return;
+    }
+    const el = new Audio(MUSIC_URL);
+    el.loop = true;
+    el.volume = 0.32;
+    el.muted = !this.enabled;
+    el.addEventListener("canplaythrough", () => {
+      this.realMusic = true;
+    });
+    el.addEventListener("error", () => {
+      this.realMusic = false; // fall back to synth arpeggio
+    });
+    this.musicEl = el;
+    void el.play().catch(() => undefined);
   }
 
   private blip(
@@ -115,8 +144,9 @@ class SfxEngine {
     this.blip(go ? 880 : 520, go ? 0.3 : 0.12, "square", 0.25, go ? 1320 : undefined);
   }
 
-  // ambient arpeggio bed so the arena never feels silent
+  // ambient arpeggio bed so the arena never feels silent (synth fallback only)
   music(dt: number, intensity: number) {
+    if (this.realMusic) return; // Suno track is playing
     if (!this.ctx || !this.musicGain || !this.enabled) return;
     this.musicTimer -= dt;
     if (this.musicTimer > 0) return;
