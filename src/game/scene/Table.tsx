@@ -54,11 +54,21 @@ export function Table({ world }: { world: Arena }) {
         <meshStandardMaterial map={map} roughnessMap={rough} color="#c2c8d8" roughness={0.85} metalness={0.25} />
       </mesh>
 
-      {/* faint concentric gold guide rings */}
+      {/* outer decorative gold band just inside the rim (ref boards) */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]}>
+        <ringGeometry args={[R - 0.85, R - 0.62, 140]} />
+        {goldMat(0.55)}
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]}>
+        <ringGeometry args={[R - 1.25, R - 1.15, 140]} />
+        {goldMat(0.4)}
+      </mesh>
+
+      {/* concentric gold guide rings */}
       {guideRings.map((r, i) => (
         <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.014, 0]}>
-          <ringGeometry args={[r - 0.035, r + 0.035, 120]} />
-          {goldMat(0.3)}
+          <ringGeometry args={[r - 0.045, r + 0.045, 120]} />
+          {goldMat(0.5)}
         </mesh>
       ))}
 

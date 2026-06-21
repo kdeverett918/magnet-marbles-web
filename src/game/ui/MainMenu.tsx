@@ -27,6 +27,8 @@ export function MainMenu() {
   const prime = () => {
     sfx.ensure();
     sfx.setEnabled(settings.sound);
+    // drop focus so Space/Enter drive the game (magnet/use), not the button
+    (document.activeElement as HTMLElement | null)?.blur?.();
   };
   const playSolo = () => {
     prime();

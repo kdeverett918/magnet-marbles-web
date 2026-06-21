@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useGame } from "../store";
 import {
   setTouchMove,
@@ -9,83 +9,82 @@ import {
 import { PU_ICON } from "./icons";
 import { sfx } from "../audio/sfx";
 
-const STICK_RADIUS = 58;
+const STICK_RADIUS = 60;
 
 export function Controls() {
   const hud = useGame((s) => s.hud);
-  const zoneRef = useRef<HTMLDivElement>(null);
   const [stick, setStick] = useState<{ x: number; y: number; nx: number; ny: number } | null>(null);
   const pid = useRef<number | null>(null);
   const [magnetOn, setMagnetOn] = useState(false);
 
-  const active = hud.phase === "playing";
+  // Render the control layer for the whole live game (intro + playing) so the
+  // pointer handlers are always mounted. (Returning null during intro was why
+  // touch input never attached.)
+  const inGame = hud.phase === "intro" || hud.phase === "playing";
+  if (!inGame) return null;
 
-  useEffect(() => {
-    const zone = zoneRef.current;
-    if (!zone) return;
-
-    const down = (e: PointerEvent) => {
-      if (pid.current !== null) return;
-      pid.current = e.pointerId;
-      try {
-        zone.setPointerCapture(e.pointerId);
-      } catch {
-        /* some browsers reject capture on synthetic/edge pointers */
+  const onDown = (e: React.PointerEvent) => {
+    if (pid.current !== null) return;
+    pid.current = e.pointerId;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    setStick({ x: e.clientX, y: e.clientY, nx: 0, ny: 0 });
+    sfx.ensure();
+  };
+  const onMove = (e: React.PointerEvent) => {
+    if (pid.current !== e.pointerId) return;
+    setStick((s) => {
+      if (!s) return s;
+      let dx = e.clientX - s.x;
+      let dy = e.clientY - s.y;
+      const d = Math.hypot(dx, dy);
+      if (d > STICK_RADIUS) {
+        dx = (dx / d) * STICK_RADIUS;
+        dy = (dy / d) * STICK_RADIUS;
       }
-      setStick({ x: e.clientX, y: e.clientY, nx: 0, ny: 0 });
-      sfx.ensure();
-    };
-    const move = (e: PointerEvent) => {
-      if (pid.current !== e.pointerId) return;
-      setStick((s) => {
-        if (!s) return s;
-        let dx = e.clientX - s.x;
-        let dy = e.clientY - s.y;
-        const d = Math.hypot(dx, dy);
-        if (d > STICK_RADIUS) {
-          dx = (dx / d) * STICK_RADIUS;
-          dy = (dy / d) * STICK_RADIUS;
-        }
-        setTouchMove(dx / STICK_RADIUS, dy / STICK_RADIUS, true);
-        return { ...s, nx: dx, ny: dy };
-      });
-    };
-    const up = (e: PointerEvent) => {
-      if (pid.current !== e.pointerId) return;
-      pid.current = null;
-      setStick(null);
-      setTouchMove(0, 0, false);
-    };
-    zone.addEventListener("pointerdown", down);
-    zone.addEventListener("pointermove", move);
-    zone.addEventListener("pointerup", up);
-    zone.addEventListener("pointercancel", up);
-    return () => {
-      zone.removeEventListener("pointerdown", down);
-      zone.removeEventListener("pointermove", move);
-      zone.removeEventListener("pointerup", up);
-      zone.removeEventListener("pointercancel", up);
-    };
-  }, []);
-
-  if (!active) return null;
+      setTouchMove(dx / STICK_RADIUS, dy / STICK_RADIUS, true);
+      return { ...s, nx: dx, ny: dy };
+    });
+  };
+  const onUp = (e: React.PointerEvent) => {
+    if (pid.current !== e.pointerId) return;
+    pid.current = null;
+    setStick(null);
+    setTouchMove(0, 0, false);
+  };
 
   const held = hud.heldPowerup;
   const dashReady = hud.dashCooldown <= 0;
 
   return (
     <div className="controls">
-      <div className="stick-zone" ref={zoneRef}>
-        {stick && (
+      <div
+        className="stick-zone"
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+      >
+        {stick ? (
           <div className="stick" style={{ left: stick.x, top: stick.y }}>
-            <div className="nub" style={{ transform: `translate(calc(-50% + ${stick.nx}px), calc(-50% + ${stick.ny}px))` }} />
+            <div
+              className="nub"
+              style={{ transform: `translate(calc(-50% + ${stick.nx}px), calc(-50% + ${stick.ny}px))` }}
+            />
+          </div>
+        ) : (
+          <div className="stick-hint">
+            <div className="stick-hint-ring" />
+            <span>drag to move</span>
           </div>
         )}
       </div>
 
       <div className="action-cluster">
         <div className="act-col">
-          {/* activate held powerup */}
           <button
             className={`act ${held ? "held" : "disabled"}`}
             onPointerDown={(e) => {
@@ -97,8 +96,8 @@ export function Controls() {
             }}
           >
             <span className="ico">{held ? PU_ICON[held] : "—"}</span>
+            <span style={{ fontSize: 9 }}>{held ? "USE" : "PWR"}</span>
           </button>
-          {/* dash */}
           <button
             className={`act ${dashReady ? "" : "disabled"}`}
             onPointerDown={(e) => {
@@ -112,7 +111,6 @@ export function Controls() {
           </button>
         </div>
 
-        {/* magnet (hold) */}
         <button
           className={`act big ${magnetOn ? "on" : ""}`}
           onPointerDown={(e) => {

@@ -99,13 +99,14 @@ export const CONFIG = {
     retargetEvery: 1.1,
   },
 
-  // --- Camera --- symmetric whole-table framing (all 4 goals visible)
+  // --- Camera --- symmetric whole-table framing (all 4 goals + rim visible)
   camera: {
-    height: 31,
-    distance: 25,
-    fov: 40,
-    tiltLerp: 0.06,
-    parallax: 0.05, // very slight drift toward the human; NOT a tight follow
+    height: 33,
+    distance: 21,
+    fov: 42,
+    fitMargin: 6.5, // extra world units beyond the rim kept in frame
+    tiltLerp: 0.08,
+    parallax: 0.04, // very slight drift toward the human; NOT a tight follow
   },
 
   // --- Counts ---

@@ -39,10 +39,13 @@ function GameLoop({ particles }: { particles: React.RefObject<ParticlesHandle> }
     // feed the local human's input (slot = humanId; 0 for single-player)
     const hid = world.humanId;
     setTouchMagnet(input.magnet);
+    // auto-magnet while moving so one-thumb / casual play just works; the
+    // explicit magnet button/Space still lets you magnetize while stationary.
+    const moving = Math.hypot(input.moveX, input.moveZ) > 0.15;
     world.setInput(hid, {
       moveX: input.moveX,
       moveZ: input.moveZ,
-      magnet: input.magnet,
+      magnet: input.magnet || moving,
       dash: input.dash,
       activate: input.activate,
     });
@@ -82,21 +85,26 @@ function GameLoop({ particles }: { particles: React.RefObject<ParticlesHandle> }
     );
     const cam = camera as THREE.PerspectiveCamera;
     const aspect = size.width / Math.max(size.height, 1);
+    const portrait = aspect < 1;
     const vFov = (cam.fov * Math.PI) / 180;
     const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect);
-    const Rfit = CONFIG.tableRadius + 2.5; // table + margin for goals/beams
+    // portrait fills the width (rim near edges); landscape keeps generous margin
+    const margin = portrait ? 2.0 : CONFIG.camera.fitMargin;
+    const Rfit = CONFIG.tableRadius + margin;
     const distV = Rfit / Math.sin(vFov / 2);
     const distH = Rfit / Math.sin(hFov / 2);
     const fitDist = Math.max(distV, distH) * 1.02;
     // preserve the configured 3/4 viewing tilt direction
     const dir = new THREE.Vector3(0, CONFIG.camera.height, CONFIG.camera.distance).normalize();
+    // on portrait, lift the arena above the thumb controls (aim slightly nearer)
+    const lift = portrait ? fitDist * 0.14 : 0;
     const desired = new THREE.Vector3(
       target.x + dir.x * fitDist,
       dir.y * fitDist,
-      target.z + dir.z * fitDist
+      target.z + dir.z * fitDist + lift
     );
     camera.position.lerp(desired, CONFIG.camera.tiltLerp);
-    camera.lookAt(target.x, 0, target.z);
+    camera.lookAt(target.x, 0, target.z + lift);
 
     // throttled HUD push
     hudTimer.current -= dt;

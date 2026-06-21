@@ -22,6 +22,7 @@ function PlayerMarble({ world, id }: { world: Arena; id: number }) {
   const ball = useRef<THREE.Mesh>(null);
   const ringRef = useRef<THREE.Mesh>(null);
   const shadowRef = useRef<THREE.Mesh>(null);
+  const marker = useRef<THREE.Group>(null);
   const mat = useMemo(() => makeMarbleMaterial(p.colorHex), [p.colorHex]);
 
   useFrame((_, dt) => {
@@ -53,6 +54,14 @@ function PlayerMarble({ world, id }: { world: Arena; id: number }) {
       shadowRef.current.position.set(p.pos.x, 0.02, p.pos.z);
       shadowRef.current.visible = p.alive && p.y >= -0.5;
     }
+    if (marker.current) {
+      const isHuman = id === world.humanId;
+      marker.current.visible = isHuman && p.alive;
+      if (isHuman) {
+        marker.current.position.y = p.radius + 1.5 + Math.sin(world.time * 4) * 0.15;
+        marker.current.rotation.y += 0.04;
+      }
+    }
   });
 
   return (
@@ -75,6 +84,18 @@ function PlayerMarble({ world, id }: { world: Arena; id: number }) {
         </mesh>
         {/* glow halo */}
         <pointLight color={p.colorHex} intensity={2.2} distance={4} />
+
+        {/* "YOU" marker — downward chevron above the human's marble */}
+        <group ref={marker} visible={false} position={[0, p.radius + 1.5, 0]}>
+          <mesh rotation={[Math.PI, 0, 0]}>
+            <coneGeometry args={[0.32, 0.5, 4]} />
+            <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={1.6} />
+          </mesh>
+          <mesh position={[0, 0.45, 0]}>
+            <sphereGeometry args={[0.12, 12, 10]} />
+            <meshStandardMaterial color={p.colorHex} emissive={p.colorHex} emissiveIntensity={2} />
+          </mesh>
+        </group>
       </group>
       {/* soft contact shadow */}
       <mesh ref={shadowRef} rotation={[-Math.PI / 2, 0, 0]} position={[p.pos.x, 0.02, p.pos.z]}>

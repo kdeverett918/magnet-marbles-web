@@ -236,6 +236,19 @@ html, body, #root {
   background: radial-gradient(circle at 35% 30%, #fff, #c9d2e6);
   transform: translate(-50%, -50%); box-shadow: 0 6px 18px rgba(0,0,0,0.4);
 }
+/* persistent hint so players know the left side is the stick */
+.stick-hint {
+  position: absolute; left: 78px; bottom: 84px; transform: translate(-50%, 50%);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  pointer-events: none; opacity: 0.5;
+}
+.stick-hint-ring {
+  width: 108px; height: 108px; border-radius: 50%;
+  border: 2px dashed rgba(255,255,255,0.4);
+  animation: hintPulse 2.2s ease-in-out infinite;
+}
+.stick-hint span { font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.75); }
+@keyframes hintPulse { 0%,100% { transform: scale(1); opacity: 0.6; } 50% { transform: scale(1.08); opacity: 0.9; } }
 .action-cluster {
   position: absolute; right: max(20px, env(safe-area-inset-right)); bottom: max(28px, env(safe-area-inset-bottom));
   display: flex; align-items: flex-end; gap: 14px; pointer-events: auto;

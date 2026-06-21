@@ -30,7 +30,7 @@ export function Marbles({ world }: { world: Arena }) {
     () =>
       new THREE.MeshBasicMaterial({
         transparent: true,
-        opacity: 0.28,
+        opacity: 0.2,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       }),
