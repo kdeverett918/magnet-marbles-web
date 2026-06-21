@@ -12,6 +12,9 @@ app.use(cors());
 app.use(express.json());
 app.get("/", (_req, res) => res.send("Magnet Marbles server: ok"));
 app.get("/health", (_req, res) => res.json({ ok: true }));
+// Catch-all GET → 200 so any platform health-check path passes. WebSocket
+// upgrades and Colyseus matchmaking (POST/WS) are unaffected (GET-only).
+app.get("*", (_req, res) => res.json({ ok: true }));
 
 const httpServer = createServer(app);
 const gameServer = new Server({

@@ -9,7 +9,9 @@ services:
     repo: https://github.com/kdeverett918/magnet-marbles-web
     branch: main
     rootDir: server
-    plan: starter
+    # free tier cold-starts after ~15 min idle; upgrade to "starter" for an
+    # always-on production multiplayer server.
+    plan: free
     buildCommand: npm install && npm run build
     startCommand: npm start
     healthCheckPath: /health
