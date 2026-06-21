@@ -1,0 +1,13 @@
+{
+  "name": "Magnet Marbles",
+  "short_name": "Marbles",
+  "description": "Magnetize, carry your glowing cluster to your goal, bump rivals off the table.",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#0a0c12",
+  "theme_color": "#0a0c12",
+  "icons": [
+    { "src": "./favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
