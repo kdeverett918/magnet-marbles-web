@@ -95,6 +95,9 @@ export const Particles = forwardRef<ParticlesHandle>(function Particles(_props, 
         case "pickup":
           spawn(6, ev.x, 0.5, ev.z, ev.color, 2.5, 3, 0.5, 0.12, -6);
           break;
+        case "cluster":
+          spawn(ev.count >= 10 ? 18 : 10, ev.x, 1.1, ev.z, ev.color, ev.count >= 10 ? 4.6 : 3.4, 5, 0.65, 0.13, -7, ev.count >= 18);
+          break;
         case "bank":
           spawn(ev.big ? 30 : 16, ev.x, 0.6, ev.z, ev.color, 5, 8, 0.9, 0.16, -9, true);
           break;

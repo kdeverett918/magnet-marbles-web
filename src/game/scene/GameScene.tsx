@@ -5,8 +5,10 @@ import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { CONFIG } from "../data/config";
 import { getWorld, useGame, type Hud, type TutorialStep } from "../store";
-import { input, clearEdges, setTouchMagnet, drag, setDragTarget, endDrag, registerTapDash } from "../input/controls";
+import { feedbackForEvents } from "../data/feedback";
+import { input, clearEdges, setTouchMagnet, drag, setDragTarget, endDrag } from "../input/controls";
 import { sfx } from "../audio/sfx";
+import { haptics } from "../haptics/haptics";
 import type { PowerupType } from "../data/types";
 import { makeGradientTexture } from "./textures";
 import { Table } from "./Table";
@@ -17,6 +19,7 @@ import { Pickups } from "./Pickups";
 import { Obstacles } from "./Obstacles";
 import { MagnetTethers } from "./MagnetTethers";
 import { Particles, type ParticlesHandle } from "./Particles";
+import { addCameraImpulse, cameraShakeOffset, type CameraShakeState } from "./cameraJuice";
 import { AmbientMotes } from "./Ambient";
 import { useReducedMotion } from "../ui/useReducedMotion";
 
@@ -25,9 +28,12 @@ const BUFFS: PowerupType[] = ["magnetBurst", "heavyCore", "superMagnet", "double
 function GameLoop({ particles, reducedMotion }: { particles: React.RefObject<ParticlesHandle>; reducedMotion: boolean }) {
   const { camera, size } = useThree();
   const pushHud = useGame((s) => s.pushHud);
+  const pushFeedback = useGame((s) => s.pushFeedback);
+  const paused = useGame((s) => s.paused);
   const sound = useGame((s) => s.settings.sound);
   const hudTimer = useRef(0);
   const lastCountdown = useRef(99);
+  const cameraShake = useRef<CameraShakeState>({ time: 0, duration: 0, amplitude: 0, phase: 0 });
 
   useEffect(() => {
     sfx.setEnabled(sound);
@@ -37,6 +43,10 @@ function GameLoop({ particles, reducedMotion }: { particles: React.RefObject<Par
     const world = getWorld();
     if (!world) return;
     const dt = Math.min(dtRaw, 0.05);
+    if (paused) {
+      clearEdges();
+      return;
+    }
 
     // feed the local human's input (slot = humanId; 0 for single-player)
     const hid = world.humanId;
@@ -87,12 +97,12 @@ function GameLoop({ particles, reducedMotion }: { particles: React.RefObject<Par
     for (const ev of fx) {
       particles.current?.emit(ev);
       sfx.play(ev);
+      haptics.play(ev);
+      if (!reducedMotion) addCameraImpulse(cameraShake.current, ev, world.time);
     }
+    pushFeedback(feedbackForEvents(fx));
 
-    // ambient music intensity scales with action
     const human = world.players[hid] ?? world.players[0];
-    const intensity = world.phase === "playing" ? 0.4 + Math.min(human?.cluster.length ?? 0, 18) / 36 : 0.1;
-    sfx.music(dt, intensity);
 
     // camera: symmetric whole-table view that auto-fits the table for ANY aspect
     // ratio (mobile portrait + desktop landscape), with a gentle parallax.
@@ -123,6 +133,11 @@ function GameLoop({ particles, reducedMotion }: { particles: React.RefObject<Par
       target.z + dir.z * fitDist + lift
     );
     camera.position.lerp(desired, reducedMotion ? 0.18 : CONFIG.camera.tiltLerp);
+    if (!reducedMotion) {
+      const shake = cameraShakeOffset(cameraShake.current, dt);
+      camera.position.x += shake.x;
+      camera.position.z += shake.z;
+    }
     camera.lookAt(target.x, 0, target.z + lift);
 
     // throttled HUD push
@@ -213,7 +228,6 @@ function DragPlane() {
       onPointerDown={(e) => {
         dragging.current = true;
         setDragTarget(e.point.x, e.point.z);
-        registerTapDash();
         sfx.ensure();
       }}
       onPointerMove={(e) => {

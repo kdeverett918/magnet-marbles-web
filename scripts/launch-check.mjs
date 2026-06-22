@@ -1,6 +1,14 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
-import { DEFAULT_CDP_PORT, cdpReady, startCdpBrowser, stopCdpBrowser } from "./lib/cdp-browser.mjs";
+import {
+  DEFAULT_CDP_PORT,
+  browserLaunchAllowed,
+  browserLaunchOptInMessage,
+  cdpReady,
+  startCdpBrowser,
+  stopCdpBrowser,
+} from "./lib/cdp-browser.mjs";
+import fingerprintModule from "./lib/source-fingerprint.cjs";
 
 const ROOT = process.cwd();
 const SERVER_DIR = `${ROOT}/server`;
@@ -21,6 +29,7 @@ const USE_SHARED_CDP = process.env.LAUNCH_SHARED_CDP !== "0";
 const SHARED_CDP_PORT = Number(process.env.LAUNCH_CDP_PORT || process.env.MM_CDP_PORT || DEFAULT_CDP_PORT);
 const EXPECT_BUILD_COMMIT = process.env.LAUNCH_EXPECT_BUILD_COMMIT || commandOutput("git", ["rev-parse", "--short=12", "HEAD"], "unknown");
 const EXPECT_BUILD_BRANCH = process.env.LAUNCH_EXPECT_BUILD_BRANCH || commandOutput("git", ["branch", "--show-current"], "unknown");
+const EXPECT_SOURCE_FINGERPRINT = process.env.LAUNCH_EXPECT_SOURCE_FINGERPRINT || fingerprintModule.sourceFingerprintSync();
 const BUILD_TIME = new Date().toISOString();
 const npmCmd = "npm";
 
@@ -90,7 +99,9 @@ async function healthDetails(url) {
 }
 
 function buildMatchesExpected(build) {
-  return EXPECT_BUILD_COMMIT === "unknown" || String(build?.commit || "").startsWith(EXPECT_BUILD_COMMIT);
+  const commitMatches = EXPECT_BUILD_COMMIT === "unknown" || String(build?.commit || "").startsWith(EXPECT_BUILD_COMMIT);
+  const sourceMatches = !EXPECT_SOURCE_FINGERPRINT || build?.sourceFingerprint === EXPECT_SOURCE_FINGERPRINT;
+  return commitMatches && sourceMatches;
 }
 
 async function waitUntil(label, predicate, timeoutMs = 20_000) {
@@ -211,6 +222,11 @@ async function ensureSharedBrowser() {
   return { enabled: true, port: SHARED_CDP_PORT, reused: false, chrome: browser.chrome };
 }
 
+async function ensureBrowserAutomationOptIn() {
+  if (!browserLaunchAllowed()) throw new Error(browserLaunchOptInMessage());
+  return { allowed: true, env: "MM_ALLOW_BROWSER" };
+}
+
 function browserSmokeEnv(env = {}) {
   if (!USE_SHARED_CDP) return env;
   return {
@@ -238,7 +254,7 @@ async function ensureLocalGameServer() {
   const existing = await healthDetails(LOCAL_HEALTH_URL);
   if (existing?.ok) {
     if (!buildMatchesExpected(existing.build)) {
-      throw new Error(`Local game server on ${LOCAL_HEALTH_URL} is stale or unversioned. Expected ${EXPECT_BUILD_COMMIT}, got ${existing.build?.commit || "missing"}. Stop it or use LAUNCH_LOCAL_SERVER_URL with a free port.`);
+      throw new Error(`Local game server on ${LOCAL_HEALTH_URL} is stale or unversioned. Expected ${EXPECT_BUILD_COMMIT}/${EXPECT_SOURCE_FINGERPRINT}, got ${existing.build?.commit || "missing"}/${existing.build?.sourceFingerprint || "missing"}. Stop it or use LAUNCH_LOCAL_SERVER_URL with a free port.`);
     }
     return { endpoint: LOCAL_SERVER_URL, healthUrl: LOCAL_HEALTH_URL, reused: true, build: existing.build ?? null };
   }
@@ -249,6 +265,7 @@ async function ensureLocalGameServer() {
       GIT_COMMIT: EXPECT_BUILD_COMMIT,
       GIT_BRANCH: EXPECT_BUILD_BRANCH,
       BUILD_TIME,
+      SOURCE_FINGERPRINT: EXPECT_SOURCE_FINGERPRINT,
     },
   });
   await waitUntil("local game server", async () => {
@@ -287,6 +304,7 @@ async function writeReport(pass, error) {
     previewUrl: PREVIEW_URL,
     localServerUrl: LOCAL_SERVER_URL,
     expectedBuildCommit: EXPECT_BUILD_COMMIT,
+    expectedSourceFingerprint: EXPECT_SOURCE_FINGERPRINT,
     liveOnline: RUN_LIVE_ONLINE,
     liveOnlineModes: RUN_LIVE_ONLINE_MODES,
     liveWeb: RUN_LIVE_WEB,
@@ -305,16 +323,19 @@ async function writeReport(pass, error) {
 async function run() {
   let failure;
   try {
+    await step("browser:opt-in", ensureBrowserAutomationOptIn);
     await step("web:test", () => npmRun("test"));
     await step("web:typecheck", () => npmRun("typecheck"));
     await step("web:lint", () => npmRun("lint"));
     await step("web:audit", () => runProcess(npmCmd, ["audit"], { cwd: ROOT }));
     await step("web:build", () => npmRun("build"));
+    await step("web:build-info-smoke", () => npmRun("build-info:smoke"));
     await step("web:metadata-smoke", () => npmRun("metadata:smoke", {
       METADATA_INDEX: "dist/index.html",
       METADATA_PUBLIC_ROOT: "dist",
       METADATA_OUTPUT: "outputs/metadata-smoke-dist.json",
     }));
+    await step("web:dist-budget-smoke", () => npmRun("dist:budget"));
     await step("web:assets-smoke", () => npmRun("assets:smoke"));
     await step("server:build", () => serverNpm(["run", "build"]));
     await step("server:audit", () => serverNpm(["audit"]));
@@ -326,6 +347,7 @@ async function run() {
     await step("smoke:preview", () => npmRun("preview:smoke", browserSmokeEnv({
       PREVIEW_URL,
       PREVIEW_EXPECT_BUILD_COMMIT: EXPECT_BUILD_COMMIT,
+      PREVIEW_EXPECT_SOURCE_FINGERPRINT: EXPECT_SOURCE_FINGERPRINT,
     })));
     await step("smoke:modes", () => npmRun("modes:smoke", browserSmokeEnv({ MODES_URL: PREVIEW_URL })));
     await step("smoke:perf", () => npmRun("perf:smoke", browserSmokeEnv({ PERF_URL: PREVIEW_URL })));
@@ -337,28 +359,34 @@ async function run() {
       ONLINE_SERVER_URL: LOCAL_SERVER_URL,
       ONLINE_OUTPUT: "outputs/online-smoke-local.json",
       ONLINE_EXPECT_BUILD_COMMIT: EXPECT_BUILD_COMMIT,
+      ONLINE_EXPECT_BUILD_SOURCE_FINGERPRINT: EXPECT_SOURCE_FINGERPRINT,
     }));
     await step("smoke:online-modes-local", () => npmRun("online:modes:smoke", {
       ONLINE_MODES_SERVER_URL: LOCAL_SERVER_URL,
       ONLINE_MODES_EXPECT_BUILD_COMMIT: EXPECT_BUILD_COMMIT,
+      ONLINE_MODES_EXPECT_BUILD_SOURCE_FINGERPRINT: EXPECT_SOURCE_FINGERPRINT,
     }));
     await step("smoke:online-disconnect-local", () => npmRun("online:disconnect:smoke", {
       ONLINE_DISCONNECT_SERVER_URL: LOCAL_SERVER_URL,
       ONLINE_DISCONNECT_EXPECT_BUILD_COMMIT: EXPECT_BUILD_COMMIT,
+      ONLINE_DISCONNECT_EXPECT_BUILD_SOURCE_FINGERPRINT: EXPECT_SOURCE_FINGERPRINT,
     }));
     if (RUN_LIVE_ONLINE) {
       await step("smoke:online-live", () => npmRun("online:smoke", RUN_LIVE_VERSION ? {
         ONLINE_EXPECT_BUILD_COMMIT: EXPECT_BUILD_COMMIT,
+        ONLINE_EXPECT_BUILD_SOURCE_FINGERPRINT: EXPECT_SOURCE_FINGERPRINT,
       } : {}));
     }
     if (RUN_LIVE_ONLINE_MODES) {
       await step("smoke:online-modes-live", () => npmRun("live:online:modes", RUN_LIVE_VERSION ? {
         ONLINE_MODES_EXPECT_BUILD_COMMIT: EXPECT_BUILD_COMMIT,
+        ONLINE_MODES_EXPECT_BUILD_SOURCE_FINGERPRINT: EXPECT_SOURCE_FINGERPRINT,
       } : {}));
     }
     if (RUN_LIVE_WEB) {
       await step("smoke:web-live", () => npmRun("live:smoke", browserSmokeEnv(RUN_LIVE_VERSION ? {
         PREVIEW_EXPECT_BUILD_COMMIT: EXPECT_BUILD_COMMIT,
+        PREVIEW_EXPECT_SOURCE_FINGERPRINT: EXPECT_SOURCE_FINGERPRINT,
       } : {})));
     }
   } catch (error) {

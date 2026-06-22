@@ -1,6 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { Client } from "colyseus.js";
 
 const DEFAULT_ENDPOINT = "wss://magnet-marbles-server.onrender.com";
 const ENDPOINT = normalizeEndpoint(process.env.ONLINE_SERVER_URL || process.env.VITE_SERVER_URL || DEFAULT_ENDPOINT);
@@ -11,6 +10,7 @@ const JOIN_TIMEOUT_MS = Number(process.env.ONLINE_JOIN_TIMEOUT_MS || 60_000);
 const SNAP_TIMEOUT_MS = Number(process.env.ONLINE_SNAP_TIMEOUT_MS || 10_000);
 const OUTPUT = process.env.ONLINE_OUTPUT || "outputs/online-smoke.json";
 const EXPECT_BUILD_COMMIT = process.env.ONLINE_EXPECT_BUILD_COMMIT || "";
+const EXPECT_BUILD_SOURCE_FINGERPRINT = process.env.ONLINE_EXPECT_BUILD_SOURCE_FINGERPRINT || "";
 
 function normalizeEndpoint(raw) {
   const url = new URL(raw);
@@ -131,6 +131,10 @@ async function run() {
     if (EXPECT_BUILD_COMMIT && !String(health.build?.commit || "").startsWith(EXPECT_BUILD_COMMIT)) {
       throw new Error(`Server build commit ${health.build?.commit || "missing"} did not match expected ${EXPECT_BUILD_COMMIT}`);
     }
+    if (EXPECT_BUILD_SOURCE_FINGERPRINT && health.build?.sourceFingerprint !== EXPECT_BUILD_SOURCE_FINGERPRINT) {
+      throw new Error(`Server source fingerprint ${health.build?.sourceFingerprint || "missing"} did not match expected ${EXPECT_BUILD_SOURCE_FINGERPRINT}`);
+    }
+    const { Client } = await import("colyseus.js");
     const client = new Client(ENDPOINT);
     const joinStartedAt = performance.now();
     room = await withTimeout(client.joinOrCreate("arena", { mode: MODE }), JOIN_TIMEOUT_MS, "joinOrCreate");
@@ -193,5 +197,5 @@ run().catch(async (error) => {
     /* ignore report write failures while exiting */
   }
   console.error(error.stack || error.message || error);
-  process.exit(1);
+  process.exitCode = 1;
 });

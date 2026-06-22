@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
+import { resolveReducedMotion } from "../data/accessibility";
+import { useGame } from "../store";
 
 export function useReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(false);
+  const motion = useGame((s) => s.settings.motion);
+  const [osPrefersReduced, setOsPrefersReduced] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
 
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setReduced(query.matches);
+    const update = () => setOsPrefersReduced(query.matches);
     update();
 
     if (query.addEventListener) {
@@ -19,5 +22,5 @@ export function useReducedMotion(): boolean {
     return () => query.removeListener(update);
   }, []);
 
-  return reduced;
+  return resolveReducedMotion(motion, osPrefersReduced);
 }

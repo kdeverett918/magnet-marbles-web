@@ -1,5 +1,6 @@
 import { MODES } from "../data/config";
 import type { FxEvent, Goal, Marble, Player, PowerupPickup, GoalButton, AutoGoalRing, RoundPhase } from "../data/types";
+import { sanitizeInputIntent } from "../sim/inputIntent";
 import type { NetInput, Snapshot } from "./protocol";
 
 const STATE_NAME = ["dead", "free", "carried", "falling"] as const;
@@ -138,7 +139,13 @@ export class NetView {
       cooldown: b.cd,
       pressedFlash: b.fl,
     }));
-    this.rings = s.rings.map((r) => ({ id: r.id, pos: { x: r.x, z: r.z }, radius: r.r, targetGoalOwnerId: 0, spin: 0 }));
+    this.rings = s.rings.map((r) => ({
+      id: r.id,
+      pos: { x: r.x, z: r.z },
+      radius: r.r,
+      targetGoalOwnerId: r.tg,
+      spin: r.sp,
+    }));
 
     if (s.fx?.length) this.fx.push(...s.fx);
   }
@@ -160,27 +167,25 @@ export class NetView {
     }
     for (const pk of this.pickups) pk.bob += dt;
     for (const r of this.rings) r.spin += dt;
-    // momentary inputs are one-shot
-    this.lastInput.dash = false;
-    this.lastInput.activate = false;
   }
 
   setInput(_id: number, input: NetInput) {
+    const safe = sanitizeInputIntent(input);
     // persist continuous; latch momentary
-    this.lastInput.moveX = input.moveX;
-    this.lastInput.moveZ = input.moveZ;
-    this.lastInput.magnet = input.magnet;
-    if (input.dash) this.lastInput.dash = true;
-    if (input.activate) this.lastInput.activate = true;
-    this.inputAccum += 1;
+    this.lastInput.moveX = safe.moveX;
+    this.lastInput.moveZ = safe.moveZ;
+    this.lastInput.magnet = safe.magnet;
+    if (safe.dash) this.lastInput.dash = true;
+    if (safe.activate) this.lastInput.activate = true;
   }
 
   /** Call from the render loop to flush input to the server ~25Hz. */
   flushInput(dt: number) {
     this.inputAccum += dt;
-    if (this.inputAccum >= 1 / 25) {
+    const hasOneShot = this.lastInput.dash || this.lastInput.activate;
+    if (hasOneShot || this.inputAccum >= 1 / 25) {
       this.inputAccum = 0;
-      this.send("input", this.lastInput);
+      this.send("input", { ...this.lastInput });
       this.lastInput.dash = false;
       this.lastInput.activate = false;
     }
@@ -193,7 +198,9 @@ export class NetView {
   }
 
   forceAdvance() {
-    this.send("advance");
+    // Online rounds advance on the authoritative server timer. The local World
+    // uses this hook for debug/next-round UX; NetView intentionally does not
+    // expose a client-controlled round skip.
   }
 
   private snapIfFar(e: { pos: { x: number; z: number }; y: number } & Target) {

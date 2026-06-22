@@ -12,10 +12,11 @@ Budget authorized by user: `$400`.
 | 2026-06-21 | Ludo `createSoundEffect` | Shock/steal pulse | 2 credits | Supports Shock Pulse and steal readability. | `public/audio/sfx/shock-pulse.mp3` |
 | 2026-06-21 | Ludo `createSoundEffect` | Magnet Burst | 2 credits | Makes the strongest magnet moment audible. | `public/audio/sfx/magnet-burst.mp3` |
 | 2026-06-21 | Ludo `createSoundEffect` | Fall/rim cue | 2 credits | Adds consequence and table-edge tension. | `public/audio/sfx/fall.mp3` |
-| 2026-06-21 | Suno-generated existing asset | Arcade music bed | No new spend recorded this pass | Gives the arena a real loop when sound is enabled; synth fallback remains available if loading fails. | `public/audio/music.mp3` |
 | 2026-06-21 | Local procedural generator | PWA icons and social preview | `$0` | Replaces favicon-only install art with correctly sized mobile launch assets, maskable icon, and share card. | `public/icons/*.png`, `public/social-card.png`, `scripts/generate-icons.mjs` |
+| 2026-06-22 | Local removal | Removed arcade music bed | `$0` | Current loop was too loud and hurt the feel; the web build is SFX-only until a quieter, reviewed loop is added. | Deleted `public/audio/music.mp3` |
+| 2026-06-22 | Local tuning | SFX master volume control | `$0` | Keeps generated SFX punchy without being loud by default; gives players a menu/pause volume slider. | `src/game/audio/sfx.ts`, `src/game/store.ts`, `src/game/ui/MainMenu.tsx`, `src/game/ui/Overlays.tsx` |
 
-Tracked total this pass: `12` Ludo credits plus one existing generated music asset with no new spend recorded. No Meshy/paid 3D generation used; icon/share art is locally generated.
+Tracked total this pass: `12` Ludo credits. No Meshy/paid 3D generation used; icon/share art is locally generated. No background music currently ships, SFX defaults to `65%` master volume, and `npm run assets:smoke` now fails if the removed `music.mp3` reappears in `public/` or `dist/`.
 
 ## Policy
 
@@ -38,6 +39,6 @@ Tracked total this pass: `12` Ludo credits plus one existing generated music ass
 
 1. One or two tiny, license-clean tabletop dressing props if visual review says the arena still reads too procedural.
 2. Store/promo capsule art after gameplay and deployment are locked.
-3. Optional replacement/compressed music loop only if physical-device review says the current 2.49 MB MP3 is too heavy or stylistically off.
+3. Optional replacement music loop only after a volume/style review; keep it quieter than gameplay SFX, governed by a separate music volume, and easy to disable.
 
 Avoid spending on large 3D models, character rigs, cinematic video, or extra cosmetic sets until the public web/backend deploy is current and live smoke checks pass.

@@ -158,8 +158,23 @@ async function run() {
     await existingAsset(appleIconHref, "apple touch icon", { type: "image/png", width: 180, height: 180, minBytes: 2000 }),
     await existingAsset(manifestHref, "manifest"),
     await existingAsset(ogImage, "social preview image", { type: "image/png", width: 1200, height: 630, minBytes: 20000 }),
-    await existingLaunchPage("./privacy.html", "privacy page", ["local storage", "Online Play", "Third Parties"]),
-    await existingLaunchPage("./support.html", "support page", ["Fast Fixes", "Controls", "Bug Report"]),
+    await existingLaunchPage("./privacy.html", "privacy page", [
+      "local storage",
+      "Online Play",
+      "Third Parties",
+      "in-app purchases",
+      "loot boxes",
+      "Fair Play And Purchases",
+      "online matches do not award account progression",
+    ]),
+    await existingLaunchPage("./support.html", "support page", [
+      "Fast Fixes",
+      "Controls",
+      "Bug Report",
+      "SFX volume",
+      "lower-right thumb zone",
+      "no purchases",
+    ]),
   ];
 
   let has192 = false;

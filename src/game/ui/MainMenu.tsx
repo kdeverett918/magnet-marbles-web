@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { useGame } from "../store";
-import { MODES, POWERUP_META } from "../data/config";
+import { BOT_DIFFICULTIES, MODES, POWERUP_META, type BotDifficulty } from "../data/config";
 import { TRAIL_COSMETICS } from "../data/progression";
+import { MOTION_MODES, type MotionMode } from "../data/accessibility";
 import { sfx } from "../audio/sfx";
+import { haptics } from "../haptics/haptics";
 import { MenuBackground } from "../scene/MenuBackground";
 
 const MARBLES_COLORS = ["#ff4a4a", "#35a5ff", "#50d56d", "#ffd04a", "#27e0e0", "#ff4dd2", "#9cff3d"];
@@ -51,7 +53,12 @@ export function MainMenu() {
     startDailyChallenge,
     startOnline,
     toggleSound,
+    setSfxVolume,
+    toggleHaptics,
+    toggleColorAssist,
+    setMotion,
     setQuality,
+    setBotDifficulty,
     unlockTrail,
     selectTrail,
   } =
@@ -62,7 +69,10 @@ export function MainMenu() {
 
   const prime = () => {
     sfx.setEnabled(settings.sound);
+    sfx.setVolume(settings.sfxVolume);
+    haptics.setEnabled(settings.haptics);
     if (settings.sound) sfx.ensure();
+    haptics.tap("press");
     // drop focus so Space/Enter drive the game (magnet/use), not the button
     (document.activeElement as HTMLElement | null)?.blur?.();
   };
@@ -173,7 +183,7 @@ export function MainMenu() {
                 <small>{dailyChallenge.target}{dailyDone ? "" : ` · +${dailyChallenge.rewardStars}★`}</small>
               </button>
             </div>
-            <div className="cosmetic-strip" aria-label="Marble trail skins">
+            <div className="cosmetic-strip" aria-label="Marble skin and trail cosmetics">
               {TRAIL_COSMETICS.map((trail) => {
                 const unlocked = progression.unlockedTrails.includes(trail.id);
                 const selected = progression.selectedTrail === trail.id;
@@ -184,12 +194,12 @@ export function MainMenu() {
                     type="button"
                     className={`trail-chip ${selected ? "active" : ""} ${unlocked ? "unlocked" : "locked"}`}
                     aria-pressed={selected}
-                    aria-label={`${trail.name}. ${unlocked ? "Unlocked" : `Costs ${trail.cost} stars`}. ${trail.tagline}`}
+                    aria-label={`${trail.name} marble skin and trail. ${unlocked ? "Unlocked" : `Costs ${trail.cost} stars`}. ${trail.tagline}. ${trail.finish}.`}
                     onClick={() => unlocked ? selectTrail(trail.id) : unlockTrail(trail.id)}
                     disabled={connecting || (!unlocked && !canBuy)}
-                    style={{ ["--trail" as any]: trail.color, ["--skin" as any]: trail.skinColor }}
+                    style={{ ["--trail" as any]: trail.color, ["--skin" as any]: trail.skinColor, ["--accent-skin" as any]: trail.skinAccent }}
                   >
-                    <i />
+                    <i className="skin-swatch" aria-hidden><b /><em /></i>
                     <span>{trail.name}</span>
                     <small>{unlocked ? (selected ? "Equipped" : "Select") : `${trail.cost}★`}</small>
                   </button>
@@ -283,6 +293,23 @@ export function MainMenu() {
                 </div>
               </div>
               <div>
+                <div className="section-label">Bots</div>
+                <div className="row" aria-label="Bot difficulty">
+                  {(Object.entries(BOT_DIFFICULTIES) as Array<[BotDifficulty, (typeof BOT_DIFFICULTIES)[BotDifficulty]]>).map(([id, difficulty]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={`chip ${settings.botDifficulty === id ? "active" : ""}`}
+                      aria-pressed={settings.botDifficulty === id}
+                      aria-label={`${difficulty.label} bots`}
+                      onClick={() => setBotDifficulty(id)}
+                    >
+                      {difficulty.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
                 <div className="section-label">Options</div>
                 <div className="row">
                   <button
@@ -294,6 +321,52 @@ export function MainMenu() {
                   >
                     {settings.sound ? "Sound" : "Muted"}
                   </button>
+                  <label className="volume-control" aria-label="Sound effects volume">
+                    <span>SFX</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="5"
+                      value={Math.round(settings.sfxVolume * 100)}
+                      onChange={(e) => setSfxVolume(Number(e.currentTarget.value) / 100)}
+                      disabled={!settings.sound}
+                    />
+                    <b>{Math.round(settings.sfxVolume * 100)}%</b>
+                  </label>
+                  <button
+                    type="button"
+                    className={`chip icon-chip ${settings.haptics ? "active" : ""}`}
+                    aria-pressed={settings.haptics}
+                    aria-label={settings.haptics ? "Haptics on" : "Haptics off"}
+                    onClick={toggleHaptics}
+                  >
+                    {settings.haptics ? "Haptics" : "Haptics off"}
+                  </button>
+                  <button
+                    type="button"
+                    className={`chip icon-chip ${settings.colorAssist ? "active" : ""}`}
+                    aria-pressed={settings.colorAssist}
+                    aria-label={settings.colorAssist ? "Color Assist on" : "Color Assist off"}
+                    onClick={toggleColorAssist}
+                  >
+                    {settings.colorAssist ? "Color Assist" : "Color Assist off"}
+                  </button>
+                  <div className="segmented motion-control" role="group" aria-label="Motion amount">
+                    <span>Motion</span>
+                    {MOTION_MODES.map((motion: MotionMode) => (
+                      <button
+                        key={motion}
+                        type="button"
+                        className={`chip mini-chip ${settings.motion === motion ? "active" : ""}`}
+                        aria-pressed={settings.motion === motion}
+                        aria-label={`Motion ${motion}`}
+                        onClick={() => setMotion(motion)}
+                      >
+                        {motion === "auto" ? "Auto" : motion === "reduced" ? "Reduce" : "Full"}
+                      </button>
+                    ))}
+                  </div>
                   <button
                     type="button"
                     className={`chip icon-chip ${settings.quality === "high" ? "active" : ""}`}

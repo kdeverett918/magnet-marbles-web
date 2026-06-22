@@ -88,6 +88,9 @@ export function formatJoinError(error: unknown, hasRoomCode: boolean): string {
     return "Online server is waking or unreachable. Wait a moment, then retry.";
   }
   if (normalized.includes("timed out")) return message;
+  if (hasRoomCode && (normalized.includes("mode mismatch") || normalized.includes("different mode"))) {
+    return "That room code is for a different mode. Select that mode or use another code.";
+  }
   if (hasRoomCode && (normalized.includes("not found") || normalized.includes("no available"))) {
     return "Room not found. Check the code and retry.";
   }

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { BOT_DIFFICULTIES, type BotDifficulty } from "./data/config";
 import type { PowerupType, RoundPhase } from "./data/types";
 import { makeWorld } from "./sim/world";
 import type { Arena } from "./sim/arena";
@@ -15,6 +16,9 @@ import {
   type MatchReward,
   type ProgressionState,
 } from "./data/progression";
+import { rankPlayersForResults, resultScoreForPlayer } from "./data/results";
+import type { FeedbackMessage, FeedbackToast } from "./data/feedback";
+import { isMotionMode, type MotionMode } from "./data/accessibility";
 
 export type TutorialStep = "off" | "collect" | "bank" | "done";
 
@@ -57,12 +61,32 @@ export interface Hud {
 
 interface Settings {
   sound: boolean;
+  sfxVolume: number;
+  haptics: boolean;
+  colorAssist: boolean;
+  motion: MotionMode;
   quality: "high" | "lite";
+  botDifficulty: BotDifficulty;
 }
 
 const SETTINGS_KEY = "magnet-marbles:settings:v1";
 const TUTORIAL_KEY = "magnet-marbles:tutorial-complete:v1";
-const DEFAULT_SETTINGS: Settings = { sound: true, quality: "high" };
+const DEFAULT_SFX_VOLUME = 0.65;
+const DEFAULT_SETTINGS: Settings = {
+  sound: true,
+  sfxVolume: DEFAULT_SFX_VOLUME,
+  haptics: true,
+  colorAssist: false,
+  motion: "auto",
+  quality: "high",
+  botDifficulty: "normal",
+};
+
+function clamp01(value: unknown, fallback = DEFAULT_SFX_VOLUME): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(1, n));
+}
 
 function defaultSettings(): Settings {
   if (typeof window === "undefined") return DEFAULT_SETTINGS;
@@ -73,8 +97,17 @@ function defaultSettings(): Settings {
     : false;
   return {
     sound: true,
+    sfxVolume: DEFAULT_SFX_VOLUME,
+    haptics: true,
+    colorAssist: false,
+    motion: "auto",
     quality: coarsePointer || narrowViewport || lowMemory ? "lite" : "high",
+    botDifficulty: "normal",
   };
+}
+
+function isBotDifficulty(value: unknown): value is BotDifficulty {
+  return typeof value === "string" && value in BOT_DIFFICULTIES;
 }
 
 function loadSettings(): Settings {
@@ -86,7 +119,12 @@ function loadSettings(): Settings {
     const parsed = JSON.parse(raw) as Partial<Settings>;
     return {
       sound: typeof parsed.sound === "boolean" ? parsed.sound : defaults.sound,
+      sfxVolume: clamp01(parsed.sfxVolume, defaults.sfxVolume),
+      haptics: typeof parsed.haptics === "boolean" ? parsed.haptics : defaults.haptics,
+      colorAssist: typeof parsed.colorAssist === "boolean" ? parsed.colorAssist : defaults.colorAssist,
+      motion: isMotionMode(parsed.motion) ? parsed.motion : defaults.motion,
       quality: parsed.quality === "lite" || parsed.quality === "high" ? parsed.quality : defaults.quality,
+      botDifficulty: isBotDifficulty(parsed.botDifficulty) ? parsed.botDifficulty : defaults.botDifficulty,
     };
   } catch {
     return defaults;
@@ -146,6 +184,7 @@ export type RewardSummary = MatchReward & { runId: number; dailyId: string | nul
 interface GameStore {
   screen: "menu" | "game";
   online: boolean;
+  paused: boolean;
   modeId: string;
   playerCount: number;
   settings: Settings;
@@ -155,19 +194,29 @@ interface GameStore {
   runId: number;
   lastReward: RewardSummary | null;
   hud: Hud;
+  feedback: FeedbackToast | null;
   net: NetState;
   startGame: (modeId: string, playerCount: number) => void;
   startDailyChallenge: () => void;
   startOnline: (modeId: string, roomCode?: string) => Promise<void>;
   quitToMenu: () => void;
+  setPaused: (paused: boolean) => void;
+  togglePaused: () => void;
   setMode: (id: string) => void;
   setPlayerCount: (n: number) => void;
   toggleSound: () => void;
+  setSfxVolume: (volume: number) => void;
+  toggleHaptics: () => void;
+  toggleColorAssist: () => void;
+  setMotion: (mode: MotionMode) => void;
   setQuality: (q: "high" | "lite") => void;
+  setBotDifficulty: (difficulty: BotDifficulty) => void;
   unlockTrail: (id: string) => void;
   selectTrail: (id: string) => void;
   claimMatchReward: (hud: Hud) => void;
   pushHud: (hud: Hud) => void;
+  pushFeedback: (feedback: FeedbackMessage | null) => void;
+  clearFeedback: (id: number) => void;
 }
 
 const emptyHud: Hud = {
@@ -184,11 +233,13 @@ const emptyNet: NetState = { status: "idle", roomId: "", error: "", startedAt: 0
 let liveArena: Arena | null = null;
 let session: NetSession | null = null;
 let connectTicket = 0;
+let feedbackId = 0;
 export const getWorld = (): Arena | null => liveArena;
 
-export const useGame = create<GameStore>((set) => ({
+export const useGame = create<GameStore>((set, get) => ({
   screen: "menu",
   online: false,
+  paused: false,
   modeId: "classic",
   playerCount: 4,
   settings: loadSettings(),
@@ -198,6 +249,7 @@ export const useGame = create<GameStore>((set) => ({
   runId: 0,
   lastReward: null,
   hud: emptyHud,
+  feedback: null,
   net: emptyNet,
 
   startGame: (modeId, playerCount) => {
@@ -211,17 +263,20 @@ export const useGame = create<GameStore>((set) => ({
         /* noop */
       }
     }
-    const w = makeWorld(modeId, playerCount, (Math.random() * 1e9) | 0, { tutorialAssist: !tutorialComplete() });
+    const botDifficulty = get().settings.botDifficulty;
+    const w = makeWorld(modeId, playerCount, (Math.random() * 1e9) | 0, { tutorialAssist: !tutorialComplete(), botDifficulty });
     w.startMatch();
     liveArena = w;
     set((s) => ({
       screen: "game",
       online: false,
+      paused: false,
       modeId,
       playerCount,
       activeDailyId: null,
       runId: s.runId + 1,
       lastReward: null,
+      feedback: null,
       net: emptyNet,
     }));
   },
@@ -238,18 +293,21 @@ export const useGame = create<GameStore>((set) => ({
       }
     }
     const daily = dailyChallengeFor();
-    const w = makeWorld(daily.modeId, daily.playerCount, daily.seed, { tutorialAssist: false });
+    const botDifficulty = get().settings.botDifficulty;
+    const w = makeWorld(daily.modeId, daily.playerCount, daily.seed, { tutorialAssist: false, botDifficulty });
     w.startMatch();
     liveArena = w;
     set((s) => ({
       screen: "game",
       online: false,
+      paused: false,
       modeId: daily.modeId,
       playerCount: daily.playerCount,
       dailyChallenge: daily,
       activeDailyId: daily.id,
       runId: s.runId + 1,
       lastReward: null,
+      feedback: null,
       net: emptyNet,
     }));
   },
@@ -266,7 +324,7 @@ export const useGame = create<GameStore>((set) => ({
       }
     }
     liveArena = null;
-    set({ online: false, modeId, activeDailyId: null, lastReward: null, net: { status: "connecting", roomId: "", error: "", startedAt: Date.now() } });
+    set({ online: false, paused: false, modeId, activeDailyId: null, lastReward: null, feedback: null, net: { status: "connecting", roomId: "", error: "", startedAt: Date.now() } });
     try {
       const s = await connect({ mode: modeId, roomCode });
       if (ticket !== connectTicket) {
@@ -289,8 +347,10 @@ export const useGame = create<GameStore>((set) => ({
       set((st) => ({
         screen: "game",
         online: true,
+        paused: false,
         modeId,
         runId: st.runId + 1,
+        feedback: null,
         net: { status: "connected", roomId: s.roomId, error: "", startedAt: 0 },
       }));
     } catch (e: any) {
@@ -312,9 +372,17 @@ export const useGame = create<GameStore>((set) => ({
       }
     }
     liveArena = null;
-    set({ screen: "menu", online: false, activeDailyId: null, hud: emptyHud, net: emptyNet });
+    set({ screen: "menu", online: false, paused: false, activeDailyId: null, hud: emptyHud, feedback: null, net: emptyNet });
   },
 
+  setPaused: (paused) => set((s) => {
+    if (s.online || s.screen !== "game") return s.paused ? { paused: false } : s;
+    return { paused };
+  }),
+  togglePaused: () => set((s) => {
+    if (s.online || s.screen !== "game") return s.paused ? { paused: false } : s;
+    return { paused: !s.paused };
+  }),
   setMode: (id) => set({ modeId: id }),
   setPlayerCount: (n) => set({ playerCount: n }),
   toggleSound: () => set((s) => {
@@ -322,8 +390,33 @@ export const useGame = create<GameStore>((set) => ({
     saveSettings(settings);
     return { settings };
   }),
+  setSfxVolume: (volume) => set((s) => {
+    const settings = { ...s.settings, sfxVolume: clamp01(volume, s.settings.sfxVolume) };
+    saveSettings(settings);
+    return { settings };
+  }),
+  toggleHaptics: () => set((s) => {
+    const settings = { ...s.settings, haptics: !s.settings.haptics };
+    saveSettings(settings);
+    return { settings };
+  }),
+  toggleColorAssist: () => set((s) => {
+    const settings = { ...s.settings, colorAssist: !s.settings.colorAssist };
+    saveSettings(settings);
+    return { settings };
+  }),
+  setMotion: (mode) => set((s) => {
+    const settings = { ...s.settings, motion: mode };
+    saveSettings(settings);
+    return { settings };
+  }),
   setQuality: (q) => set((s) => {
     const settings = { ...s.settings, quality: q };
+    saveSettings(settings);
+    return { settings };
+  }),
+  setBotDifficulty: (difficulty) => set((s) => {
+    const settings = { ...s.settings, botDifficulty: difficulty };
     saveSettings(settings);
     return { settings };
   }),
@@ -339,15 +432,16 @@ export const useGame = create<GameStore>((set) => ({
   }),
   claimMatchReward: (hud) => set((s) => {
     if (s.online || hud.phase !== "matchEnd" || s.lastReward?.runId === s.runId) return s;
-    const sorted = [...hud.players].sort((a, b) => b.score - a.score);
-    const humanIndex = sorted.findIndex((p) => p.id === hud.humanId);
     const human = hud.players.find((p) => p.id === hud.humanId);
-    if (humanIndex < 0 || !human) return s;
+    if (!human) return s;
+    const ranked = rankPlayersForResults(hud.modeKind, hud.players, hud.winnerId);
+    const humanResult = ranked.find((entry) => entry.player.id === hud.humanId);
+    if (!humanResult) return s;
     const daily = s.activeDailyId === s.dailyChallenge.id ? s.dailyChallenge : null;
     const reward = rewardForMatch({
-      won: humanIndex === 0,
-      placement: humanIndex + 1,
-      score: human.score,
+      won: humanResult.isWinner,
+      placement: humanResult.placement,
+      score: resultScoreForPlayer(hud.modeKind, hud.players, human),
       daily,
       dailyAlreadyCompleted: daily ? s.progression.dailyCompleted.includes(daily.id) : true,
     });
@@ -362,4 +456,9 @@ export const useGame = create<GameStore>((set) => ({
     if (hud.tutorialComplete) saveTutorialComplete();
     set({ hud });
   },
+  pushFeedback: (feedback) => {
+    if (!feedback) return;
+    set({ feedback: { ...feedback, id: ++feedbackId } });
+  },
+  clearFeedback: (id) => set((s) => (s.feedback?.id === id ? { feedback: null } : s)),
 }));

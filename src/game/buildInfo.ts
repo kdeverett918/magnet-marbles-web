@@ -5,6 +5,7 @@ export interface BuildInfo {
   branch: string;
   dirty: boolean;
   builtAt: string;
+  sourceFingerprint: string;
 }
 
 declare const __MM_BUILD_INFO__: BuildInfo;
@@ -23,4 +24,5 @@ export function installBuildInfo() {
   document.documentElement.dataset.buildBranch = BUILD_INFO.branch;
   document.documentElement.dataset.buildDirty = String(BUILD_INFO.dirty);
   document.documentElement.dataset.buildTime = BUILD_INFO.builtAt;
+  document.documentElement.dataset.sourceFingerprint = BUILD_INFO.sourceFingerprint;
 }

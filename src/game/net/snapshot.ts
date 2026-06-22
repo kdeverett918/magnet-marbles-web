@@ -74,7 +74,14 @@ export function buildSnapshot(world: World, fx: FxEvent[]): Snapshot {
       cd: round2(b.cooldown),
       fl: round2(b.pressedFlash),
     })),
-    rings: world.rings.map((r) => ({ id: r.id, x: round2(r.pos.x), z: round2(r.pos.z), r: r.radius })),
+    rings: world.rings.map((r) => ({
+      id: r.id,
+      x: round2(r.pos.x),
+      z: round2(r.pos.z),
+      r: r.radius,
+      tg: r.targetGoalOwnerId,
+      sp: round2(r.spin),
+    })),
     fx,
   };
 }

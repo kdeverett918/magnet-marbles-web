@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 const OUTPUT = process.env.ASSETS_OUTPUT || "outputs/assets-smoke.json";
 const MIN_SFX_BYTES = 4_000;
-const MIN_MUSIC_BYTES = 100_000;
+const FORBIDDEN_MUSIC = ["public/audio/music.mp3", "dist/audio/music.mp3"];
 const EXPECTED_SFX = [
   "pickup.mp3",
   "bank.mp3",
@@ -12,7 +12,6 @@ const EXPECTED_SFX = [
   "magnet-burst.mp3",
   "fall.mp3",
 ];
-const EXPECTED_MUSIC = ["music.mp3"];
 
 async function fileReport(root, file, minBytes) {
   const path = join(root, file);
@@ -21,27 +20,35 @@ async function fileReport(root, file, minBytes) {
   return { path, bytes: info.size };
 }
 
+async function assertMissing(path) {
+  try {
+    await stat(path);
+    throw new Error(`${path} should not exist; background music is intentionally disabled`);
+  } catch (error) {
+    if (error?.code === "ENOENT") return { path, missing: true };
+    throw error;
+  }
+}
+
 async function run() {
   const sfxRoots = ["public/audio/sfx", "dist/audio/sfx"];
-  const musicRoots = ["public/audio", "dist/audio"];
   const files = [];
   for (const root of sfxRoots) {
     for (const file of EXPECTED_SFX) {
       files.push(await fileReport(root, file, MIN_SFX_BYTES));
     }
   }
-  for (const root of musicRoots) {
-    for (const file of EXPECTED_MUSIC) {
-      files.push(await fileReport(root, file, MIN_MUSIC_BYTES));
-    }
+  const forbidden = [];
+  for (const file of FORBIDDEN_MUSIC) {
+    forbidden.push(await assertMissing(file));
   }
 
   const report = {
     pass: true,
     capturedAt: new Date().toISOString(),
     minSfxBytes: MIN_SFX_BYTES,
-    minMusicBytes: MIN_MUSIC_BYTES,
     files,
+    forbidden,
   };
   await mkdir("outputs", { recursive: true });
   await writeFile(OUTPUT, JSON.stringify(report, null, 2));

@@ -43,6 +43,12 @@ describe("shared input state", () => {
     setDragTarget(3, -2);
 
     expect(drag).toEqual({ active: true, x: 3, z: -2 });
+    expect(input.dash).toBe(false);
+
+    setDragTarget(4, -3);
+
+    expect(drag).toEqual({ active: true, x: 4, z: -3 });
+    expect(input.dash).toBe(false);
 
     endDrag();
 

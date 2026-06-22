@@ -1,0 +1,29 @@
+name: Deploy Monitor
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  live-no-browser-monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run deploy:monitor
+      - name: Upload deploy monitor reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-monitor-reports
+          path: outputs/
+          if-no-files-found: ignore

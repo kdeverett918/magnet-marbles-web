@@ -47,7 +47,7 @@ describe("progression", () => {
     expect(afterRepeat.dailyCompleted).toEqual([daily.id]);
   });
 
-  it("spends stars to unlock and select trail skins safely", () => {
+  it("spends stars to unlock and select marble skin/trail cosmetics safely", () => {
     const withStars = normalizeProgression({ ...DEFAULT_PROGRESSION, stars: 8, totalStarsEarned: 8 });
     const unlocked = unlockTrail(withStars, "gold");
     const selected = selectTrail(unlocked, "comet");

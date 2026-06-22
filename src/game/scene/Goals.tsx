@@ -2,6 +2,9 @@ import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { Arena } from "../sim/arena";
+import { useGame } from "../store";
+import { identityPipCount } from "../data/identity";
+import { IdentityPipBadge } from "./IdentityPips";
 
 export function Goals({ world }: { world: Arena }) {
   return (
@@ -16,6 +19,8 @@ export function Goals({ world }: { world: Arena }) {
 function GoalBowl({ world, ownerId }: { world: Arena; ownerId: number }) {
   const goal = world.goals[ownerId];
   const color = goal.colorHex;
+  const colorAssist = useGame((s) => s.settings.colorAssist);
+  const pipCount = identityPipCount(ownerId);
   const funnel = useRef<THREE.Group>(null);
   const core = useRef<THREE.Mesh>(null);
   const beamRef = useRef<THREE.Mesh>(null);
@@ -130,6 +135,12 @@ function GoalBowl({ world, ownerId }: { world: Arena; ownerId: number }) {
 
       {/* light spill */}
       <pointLight color={color} intensity={7} distance={9} position={[0, 1.0, 0]} />
+
+      {colorAssist && (
+        <group position={[0, 1.28, 0]} scale={1.08}>
+          <IdentityPipBadge count={pipCount} radius={0.5} pipRadius={0.065} accent="#ffe07d" />
+        </group>
+      )}
 
       {/* blocked cage */}
       <group ref={blockRef} visible={false}>

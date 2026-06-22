@@ -7,6 +7,8 @@ import { CONFIG } from "../data/config";
 import { getTrailCosmetic } from "../data/progression";
 import { useGame } from "../store";
 import { makeMarbleMaterial } from "./marbleMaterial";
+import { identityPipCount } from "../data/identity";
+import { IdentityPipBadge } from "./IdentityPips";
 
 export function Players({ world }: { world: Arena }) {
   return (
@@ -22,8 +24,10 @@ function PlayerMarble({ world, id }: { world: Arena; id: number }) {
   const p = world.players[id];
   const selectedTrail = useGame((s) => s.progression.selectedTrail);
   const quality = useGame((s) => s.settings.quality);
+  const colorAssist = useGame((s) => s.settings.colorAssist);
   const cosmetic = id === world.humanId ? getTrailCosmetic(selectedTrail) : null;
   const visualColor = cosmetic?.skinColor ?? p.colorHex;
+  const skinAccent = cosmetic?.skinAccent ?? "#ffffff";
   const trailColor = cosmetic?.color ?? p.colorHex;
   const isHuman = id === world.humanId;
   const lite = quality === "lite";
@@ -35,7 +39,8 @@ function PlayerMarble({ world, id }: { world: Arena; id: number }) {
   const heavyRef = useRef<THREE.Mesh>(null);
   const shadowRef = useRef<THREE.Mesh>(null);
   const marker = useRef<THREE.Group>(null);
-  const mat = useMemo(() => makeMarbleMaterial(visualColor), [visualColor]);
+  const mat = useMemo(() => makeMarbleMaterial(visualColor, skinAccent), [visualColor, skinAccent]);
+  const pipCount = identityPipCount(p);
 
   useFrame((_, dt) => {
     const g = group.current;
@@ -126,6 +131,11 @@ function PlayerMarble({ world, id }: { world: Arena; id: number }) {
             <meshStandardMaterial color={p.colorHex} emissive={p.colorHex} emissiveIntensity={2} />
           </mesh>
         </group>
+        {colorAssist && (
+          <group position={[0, p.radius + 1.92, 0]} scale={isHuman ? 1.16 : 1}>
+            <IdentityPipBadge count={pipCount} accent={isHuman ? "#ffffff" : p.colorHex} />
+          </group>
+        )}
       </group>
       {/* soft contact shadow */}
       <mesh ref={shadowRef} rotation={[-Math.PI / 2, 0, 0]} position={[p.pos.x, 0.02, p.pos.z]}>

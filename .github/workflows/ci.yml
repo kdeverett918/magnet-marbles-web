@@ -5,14 +5,25 @@ on:
   pull_request:
     branches: [main]
 jobs:
-  build:
+  no-browser-validation:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm run build
+      - run: npm ci --prefix server
+      - run: npm run validate:no-browser
+      - name: Upload validation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: no-browser-validation-reports
+          path: outputs/
+          if-no-files-found: ignore

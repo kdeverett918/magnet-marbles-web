@@ -4,6 +4,7 @@ import { setTouchMagnetHeld, triggerDash, triggerActivate } from "../input/contr
 import { rightGestureShouldDash, type TouchPoint } from "../input/touchGestures";
 import { PU_ICON, PU_LABEL } from "./icons";
 import { sfx } from "../audio/sfx";
+import { haptics } from "../haptics/haptics";
 
 /**
  * Minimal on-screen controls. Movement is direct-drag on the play field
@@ -12,10 +13,11 @@ import { sfx } from "../audio/sfx";
  */
 export function Controls() {
   const hud = useGame((s) => s.hud);
+  const paused = useGame((s) => s.paused);
   const [magnetOn, setMagnetOn] = useState(false);
   const rightGesture = useRef<(TouchPoint & { id: number }) | null>(null);
 
-  const inGame = hud.phase === "intro" || hud.phase === "playing";
+  const inGame = (hud.phase === "intro" || hud.phase === "playing") && !paused;
   if (!inGame) return null;
 
   const held = hud.heldPowerup;
@@ -34,6 +36,7 @@ export function Controls() {
       /* ignore */
     }
     setMag(true);
+    haptics.tap("magnet");
     sfx.ensure();
   };
   const onRightUp = (e: React.PointerEvent, canceled = false) => {
@@ -44,6 +47,7 @@ export function Controls() {
     setMag(false);
     if (rightGestureShouldDash(gesture, { x: e.clientX, y: e.clientY, t: performance.now() }, dashReady, canceled)) {
       triggerDash();
+      haptics.tap("dash");
     }
   };
 
@@ -75,6 +79,7 @@ export function Controls() {
               e.preventDefault();
               if (held) {
                 triggerActivate();
+                haptics.tap("press");
                 sfx.ensure();
               }
             }}
@@ -90,6 +95,7 @@ export function Controls() {
             onPointerDown={(e) => {
               e.preventDefault();
               triggerDash();
+              haptics.tap("dash");
               sfx.ensure();
             }}
           >
@@ -106,6 +112,7 @@ export function Controls() {
           onPointerDown={(e) => {
             e.preventDefault();
             setMag(true);
+            haptics.tap("magnet");
             sfx.ensure();
           }}
           onPointerUp={(e) => {

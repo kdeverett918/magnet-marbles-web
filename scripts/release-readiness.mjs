@@ -2,7 +2,16 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
-import { DEFAULT_CDP_PORT, cdpReady, delay, startCdpBrowser, stopCdpBrowser } from "./lib/cdp-browser.mjs";
+import fingerprintModule from "./lib/source-fingerprint.cjs";
+import {
+  DEFAULT_CDP_PORT,
+  browserLaunchAllowed,
+  browserLaunchOptInMessage,
+  cdpReady,
+  delay,
+  startCdpBrowser,
+  stopCdpBrowser,
+} from "./lib/cdp-browser.mjs";
 
 const OUTPUT = process.env.RELEASE_OUTPUT || "outputs/release-readiness.json";
 const LIVE_WEB_URL = process.env.RELEASE_LIVE_WEB_URL || "https://magnet-marbles.onrender.com/";
@@ -21,6 +30,7 @@ const REQUIRE_METADATA = process.env.RELEASE_REQUIRE_METADATA !== "0";
 const REQUIRE_MOBILE_PERF = process.env.RELEASE_REQUIRE_MOBILE_PERF !== "0";
 const SKIP_LIVE = process.env.RELEASE_SKIP_LIVE === "1";
 const CDP_PORT = Number(process.env.RELEASE_CDP_PORT || process.env.MM_CDP_PORT || DEFAULT_CDP_PORT);
+const EXPECT_SOURCE_FINGERPRINT = process.env.RELEASE_EXPECT_SOURCE_FINGERPRINT || fingerprintModule.sourceFingerprintSync();
 
 function firstExisting(paths) {
   return paths.find((path) => existsSync(path)) || paths[0];
@@ -86,6 +96,33 @@ async function fetchHealth(endpoint, timeoutMs = 60_000) {
   }
 }
 
+async function fetchWebBuild(webUrl, timeoutMs = 15_000) {
+  const url = new URL("./build.json", webUrl).toString();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const startedAt = performance.now();
+  try {
+    const response = await fetch(url, { cache: "no-store", signal: controller.signal });
+    const text = await response.text();
+    let body = null;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = null;
+    }
+    return {
+      url,
+      pass: response.ok && body !== null,
+      status: response.status,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      build: body,
+      body: body === null ? text.slice(0, 500) : undefined,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function failureText(step) {
   const lines = [step.error, step.stderr, step.stdout]
     .filter(Boolean)
@@ -94,6 +131,93 @@ function failureText(step) {
     .map((line) => line.trim())
     .filter(Boolean);
   return lines.find((line) => line.startsWith("Error:")) || lines.at(-1) || "failed";
+}
+
+function skippedLiveStep(name, error) {
+  return {
+    name,
+    pass: false,
+    skipped: true,
+    elapsedMs: 0,
+    error,
+  };
+}
+
+function buildMatchesCandidate(build, commit) {
+  const actualCommit = String(build?.commit || "");
+  const actualSource = String(build?.sourceFingerprint || "");
+  return {
+    commit: actualCommit,
+    sourceFingerprint: actualSource,
+    commitMatches: actualCommit.startsWith(commit),
+    sourceMatches: actualSource === EXPECT_SOURCE_FINGERPRINT,
+  };
+}
+
+async function liveWebBuildStep(commit) {
+  const startedAt = performance.now();
+  try {
+    const webBuild = await fetchWebBuild(LIVE_WEB_URL);
+    const match = buildMatchesCandidate(webBuild.build, commit);
+    const webBuildPass = webBuild.pass && match.commitMatches && match.sourceMatches;
+    return {
+      step: {
+        name: "live:web-build-version",
+        pass: webBuildPass,
+        elapsedMs: webBuild.elapsedMs,
+        result: webBuild,
+        error: webBuildPass
+          ? undefined
+          : !match.commitMatches
+          ? `Web build commit ${match.commit || "missing"} did not match expected ${commit}`
+          : `Web source fingerprint ${match.sourceFingerprint || "missing"} did not match expected ${EXPECT_SOURCE_FINGERPRINT}`,
+      },
+      pass: webBuildPass,
+    };
+  } catch (error) {
+    return {
+      step: {
+        name: "live:web-build-version",
+        pass: false,
+        elapsedMs: Math.round(performance.now() - startedAt),
+        error: `Could not fetch live web build metadata: ${error.message}`,
+      },
+      pass: false,
+    };
+  }
+}
+
+async function liveServerHealthStep(commit) {
+  const startedAt = performance.now();
+  try {
+    const serverHealth = await fetchHealth(LIVE_SERVER_URL);
+    const match = buildMatchesCandidate(serverHealth.build, commit);
+    const serverHealthPass = serverHealth.pass && match.commitMatches && match.sourceMatches;
+    return {
+      step: {
+        name: "live:server-health-version",
+        pass: serverHealthPass,
+        elapsedMs: serverHealth.elapsedMs,
+        result: serverHealth,
+        error: serverHealthPass
+          ? undefined
+          : !match.commitMatches
+          ? `Server build commit ${match.commit || "missing"} did not match expected ${commit}`
+          : `Server source fingerprint ${match.sourceFingerprint || "missing"} did not match expected ${EXPECT_SOURCE_FINGERPRINT}`,
+      },
+      pass: serverHealthPass,
+    };
+  } catch (error) {
+    return {
+      step: {
+        name: "live:server-health-version",
+        pass: false,
+        elapsedMs: Math.round(performance.now() - startedAt),
+        error: `Could not fetch live server health metadata: ${error.message}`,
+      },
+      pass: false,
+    };
+  }
 }
 
 async function waitForCdp(port, timeoutMs = 10_000) {
@@ -185,6 +309,81 @@ async function runLiveChecks(commit, blockers) {
   if (SKIP_LIVE) return { skipped: true, steps: [] };
 
   const steps = [];
+  const webPreflight = await liveWebBuildStep(commit);
+  steps.push(webPreflight.step);
+
+  const serverPreflight = await liveServerHealthStep(commit);
+  steps.push(serverPreflight.step);
+
+  const preflightPass = webPreflight.pass && serverPreflight.pass;
+  if (!preflightPass) {
+    const reason = "Skipped because live build/version preflight failed; Chrome/CDP was not started";
+    steps.push(skippedLiveStep("live:web", reason));
+    steps.push(skippedLiveStep("live:online-classic", reason));
+    steps.push(skippedLiveStep("live:online-modes", reason));
+    steps.push(skippedLiveStep("live:online-disconnect", reason));
+
+    for (const step of steps) {
+      if (!step.pass) blockers.push(`${step.name} failed: ${failureText(step)}`);
+    }
+
+    return {
+      skipped: false,
+      cdp: { port: CDP_PORT, chrome: null, reused: false, started: false },
+      preflight: { web: webPreflight.pass, server: serverPreflight.pass },
+      steps,
+    };
+  }
+
+  steps.push({
+    name: "live:online-classic",
+    ...(await runNodeScript("scripts/online-smoke.mjs", {
+      ONLINE_SERVER_URL: LIVE_SERVER_URL,
+      ONLINE_EXPECT_BUILD_COMMIT: commit,
+      ONLINE_EXPECT_BUILD_SOURCE_FINGERPRINT: EXPECT_SOURCE_FINGERPRINT,
+      ONLINE_OUTPUT: "outputs/release-online-smoke.json",
+      ONLINE_HEALTH_TIMEOUT_MS: "60000",
+      ONLINE_JOIN_TIMEOUT_MS: "60000",
+    })),
+  });
+
+  steps.push({
+    name: "live:online-modes",
+    ...(await runNodeScript("scripts/live-online-modes-smoke.mjs", {
+      ONLINE_MODES_SERVER_URL: LIVE_SERVER_URL,
+      ONLINE_MODES_EXPECT_BUILD_COMMIT: commit,
+      ONLINE_MODES_EXPECT_BUILD_SOURCE_FINGERPRINT: EXPECT_SOURCE_FINGERPRINT,
+      ONLINE_MODES_OUTPUT: "outputs/release-online-modes-smoke.json",
+    })),
+  });
+
+  steps.push({
+    name: "live:online-disconnect",
+    ...(await runNodeScript("scripts/online-disconnect-smoke.mjs", {
+      ONLINE_DISCONNECT_SERVER_URL: LIVE_SERVER_URL,
+      ONLINE_DISCONNECT_EXPECT_BUILD_COMMIT: commit,
+      ONLINE_DISCONNECT_EXPECT_BUILD_SOURCE_FINGERPRINT: EXPECT_SOURCE_FINGERPRINT,
+      ONLINE_DISCONNECT_OUTPUT: "outputs/release-online-disconnect-smoke.json",
+      ONLINE_DISCONNECT_HEALTH_TIMEOUT_MS: "60000",
+      ONLINE_DISCONNECT_HEALTH_POLL_MS: "1000",
+      ONLINE_DISCONNECT_JOIN_TIMEOUT_MS: "60000",
+    })),
+  });
+
+  if (!browserLaunchAllowed()) {
+    const reason = browserLaunchOptInMessage();
+    steps.push(skippedLiveStep("live:web", reason));
+    for (const step of steps) {
+      if (!step.pass) blockers.push(`${step.name} failed: ${failureText(step)}`);
+    }
+    return {
+      skipped: false,
+      cdp: { port: CDP_PORT, chrome: null, reused: false, started: false },
+      preflight: { web: webPreflight.pass, server: serverPreflight.pass },
+      steps,
+    };
+  }
+
   const browser = await startCdpBrowser({
     port: CDP_PORT,
     profilePrefix: "magnet-marbles-release-chrome-",
@@ -193,89 +392,19 @@ async function runLiveChecks(commit, blockers) {
 
   try {
     await waitForCdp(CDP_PORT);
-    const sharedBrowserEnv = {
-      MM_CDP_PORT: String(CDP_PORT),
-      MM_REUSE_CDP: "1",
-    };
-
     steps.push({
       name: "live:web",
       ...(await runNodeScript("scripts/live-web-smoke.mjs", {
-        ...sharedBrowserEnv,
+        MM_CDP_PORT: String(CDP_PORT),
+        MM_REUSE_CDP: "1",
         PREVIEW_URL: LIVE_WEB_URL,
         PREVIEW_EXPECT_BUILD_COMMIT: commit,
+        PREVIEW_EXPECT_SOURCE_FINGERPRINT: EXPECT_SOURCE_FINGERPRINT,
         PREVIEW_OUTPUT: "outputs/release-live-web-smoke.json",
         PREVIEW_SCREENSHOT: "outputs/release-live-web-smoke.png",
         PREVIEW_MENU_SCREENSHOT: "outputs/release-live-web-menu.png",
       })),
     });
-
-    const serverHealth = await fetchHealth(LIVE_SERVER_URL);
-    const serverCommit = String(serverHealth.build?.commit || "");
-    const serverHealthPass = serverHealth.pass && serverCommit.startsWith(commit);
-    steps.push({
-      name: "live:server-health-version",
-      pass: serverHealthPass,
-      elapsedMs: serverHealth.elapsedMs,
-      result: serverHealth,
-      error: serverHealthPass ? undefined : `Server build commit ${serverCommit || "missing"} did not match expected ${commit}`,
-    });
-
-    if (serverHealthPass) {
-      steps.push({
-        name: "live:online-classic",
-        ...(await runNodeScript("scripts/online-smoke.mjs", {
-          ONLINE_SERVER_URL: LIVE_SERVER_URL,
-          ONLINE_EXPECT_BUILD_COMMIT: commit,
-          ONLINE_OUTPUT: "outputs/release-online-smoke.json",
-          ONLINE_HEALTH_TIMEOUT_MS: "60000",
-          ONLINE_JOIN_TIMEOUT_MS: "60000",
-        })),
-      });
-
-      steps.push({
-        name: "live:online-modes",
-        ...(await runNodeScript("scripts/live-online-modes-smoke.mjs", {
-          ONLINE_MODES_SERVER_URL: LIVE_SERVER_URL,
-          ONLINE_MODES_EXPECT_BUILD_COMMIT: commit,
-          ONLINE_MODES_OUTPUT: "outputs/release-online-modes-smoke.json",
-        })),
-      });
-
-      steps.push({
-        name: "live:online-disconnect",
-        ...(await runNodeScript("scripts/online-disconnect-smoke.mjs", {
-          ONLINE_DISCONNECT_SERVER_URL: LIVE_SERVER_URL,
-          ONLINE_DISCONNECT_EXPECT_BUILD_COMMIT: commit,
-          ONLINE_DISCONNECT_OUTPUT: "outputs/release-online-disconnect-smoke.json",
-          ONLINE_DISCONNECT_HEALTH_TIMEOUT_MS: "60000",
-          ONLINE_DISCONNECT_HEALTH_POLL_MS: "1000",
-          ONLINE_DISCONNECT_JOIN_TIMEOUT_MS: "60000",
-        })),
-      });
-    } else {
-      steps.push({
-        name: "live:online-classic",
-        pass: false,
-        skipped: true,
-        elapsedMs: 0,
-        error: "Skipped because live server health/version check failed",
-      });
-      steps.push({
-        name: "live:online-modes",
-        pass: false,
-        skipped: true,
-        elapsedMs: 0,
-        error: "Skipped because live server health/version check failed",
-      });
-      steps.push({
-        name: "live:online-disconnect",
-        pass: false,
-        skipped: true,
-        elapsedMs: 0,
-        error: "Skipped because live server health/version check failed",
-      });
-    }
   } finally {
     await stopCdpBrowser(browser);
   }
@@ -286,7 +415,8 @@ async function runLiveChecks(commit, blockers) {
 
   return {
     skipped: false,
-    cdp: { port: CDP_PORT, chrome: browser.chrome, reused: !browser.launched },
+    cdp: { port: CDP_PORT, chrome: browser.chrome, reused: !browser.launched, started: true },
+    preflight: { web: webPreflight.pass, server: serverPreflight.pass },
     steps,
   };
 }
@@ -309,6 +439,7 @@ async function run() {
     commit,
     branch,
     dirty,
+    sourceFingerprint: EXPECT_SOURCE_FINGERPRINT,
     policy: {
       requireClean: REQUIRE_CLEAN,
       requireMetadata: REQUIRE_METADATA,
@@ -335,7 +466,7 @@ async function run() {
     live: live.skipped ? "skipped" : live.steps.map((step) => ({ name: step.name, pass: step.pass, elapsedMs: step.elapsedMs })),
   }, null, 2));
 
-  if (!report.pass) process.exit(1);
+  if (!report.pass) process.exitCode = 1;
 }
 
 run().catch(async (error) => {
@@ -351,5 +482,5 @@ run().catch(async (error) => {
     /* ignore report write failures */
   }
   console.error(error.stack || error.message || error);
-  process.exit(1);
+  process.exitCode = 1;
 });

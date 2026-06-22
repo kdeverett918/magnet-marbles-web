@@ -1,6 +1,14 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { Client } from "colyseus.js";
+
+let Client;
+
+async function loadColyseusClient() {
+  if (!Client) {
+    ({ Client } = await import("colyseus.js"));
+  }
+  return Client;
+}
 
 const DEFAULT_ENDPOINT = "ws://127.0.0.1:2568";
 const ENDPOINT = normalizeEndpoint(
@@ -14,6 +22,7 @@ const JOIN_TIMEOUT_MS = Number(process.env.ONLINE_MODES_JOIN_TIMEOUT_MS || 15_00
 const SNAP_TIMEOUT_MS = Number(process.env.ONLINE_MODES_SNAP_TIMEOUT_MS || 8_000);
 const OUTPUT = process.env.ONLINE_MODES_OUTPUT || "outputs/online-modes-smoke.json";
 const EXPECT_BUILD_COMMIT = process.env.ONLINE_MODES_EXPECT_BUILD_COMMIT || "";
+const EXPECT_BUILD_SOURCE_FINGERPRINT = process.env.ONLINE_MODES_EXPECT_BUILD_SOURCE_FINGERPRINT || "";
 
 const modes = [
   { id: "classic", rounds: 3, roundTime: 90 },
@@ -56,6 +65,42 @@ function withTimeout(promise, ms, label) {
       timer = setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)} seconds`)), ms);
     }),
   ]);
+}
+
+function shouldSuppressExpectedMismatchLog(args) {
+  const text = args.map((arg) => String(arg)).join(" ");
+  return (
+    text.includes("Room mode mismatch") ||
+    text.includes("Room connection was closed unexpectedly (4002)") ||
+    text.includes("colyseus.js - onError => (4002)") ||
+    text.includes("colyseus.js - onError => (4216)")
+  );
+}
+
+async function expectJoinByIdRejected(client, roomId, options, label) {
+  const originalWarn = console.warn;
+  const originalError = console.error;
+  let room;
+  console.warn = (...args) => {
+    if (!shouldSuppressExpectedMismatchLog(args)) originalWarn(...args);
+  };
+  console.error = (...args) => {
+    if (!shouldSuppressExpectedMismatchLog(args)) originalError(...args);
+  };
+  try {
+    room = await withTimeout(client.joinById(roomId, options), JOIN_TIMEOUT_MS, label);
+    return { rejected: false, error: "", room };
+  } catch (error) {
+    await delay(50);
+    return {
+      rejected: true,
+      error: error instanceof Error ? error.message : String(error),
+      room: null,
+    };
+  } finally {
+    console.warn = originalWarn;
+    console.error = originalError;
+  }
 }
 
 async function waitForHealth(endpoint) {
@@ -190,6 +235,71 @@ async function smokeMode(client, mode) {
   }
 }
 
+async function smokeModeIsolation() {
+  const ClientClass = await loadColyseusClient();
+  const classic = modes.find((mode) => mode.id === "classic");
+  const survival = modes.find((mode) => mode.id === "survival");
+  if (!classic || !survival) throw new Error("mode isolation smoke requires classic and survival definitions");
+
+  const clientA = new ClientClass(ENDPOINT);
+  const clientB = new ClientClass(ENDPOINT);
+  const clientMismatch = new ClientClass(ENDPOINT);
+  let classicRoom;
+  let survivalRoom;
+  let mismatchedRoom;
+  const startedAt = performance.now();
+
+  try {
+    classicRoom = await withTimeout(clientA.joinOrCreate("arena", { mode: classic.id }), JOIN_TIMEOUT_MS, "mode isolation classic join");
+    classicRoom.onMessage("welcome", () => {});
+    const classicSnapshot = await waitForMessage(classicRoom, "snap", SNAP_TIMEOUT_MS);
+    const classicSummary = assertModeSnapshot(classic, classicSnapshot);
+
+    const mismatch = await expectJoinByIdRejected(
+      clientMismatch,
+      classicRoom.roomId,
+      { mode: survival.id },
+      "mode isolation mismatched joinById"
+    );
+    mismatchedRoom = mismatch.room;
+    if (!mismatch.rejected) {
+      throw new Error("mode isolation failed: mismatched joinById unexpectedly joined the Classic room");
+    }
+
+    survivalRoom = await withTimeout(clientB.joinOrCreate("arena", { mode: survival.id }), JOIN_TIMEOUT_MS, "mode isolation survival join");
+    survivalRoom.onMessage("welcome", () => {});
+    const survivalSnapshot = await waitForMessage(survivalRoom, "snap", SNAP_TIMEOUT_MS);
+    const survivalSummary = assertModeSnapshot(survival, survivalSnapshot);
+
+    if (survivalRoom.roomId === classicRoom.roomId) {
+      throw new Error("mode isolation failed: survival joined the occupied classic room");
+    }
+
+    return {
+      pass: true,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      classicRoomId: classicRoom.roomId,
+      survivalRoomId: survivalRoom.roomId,
+      mismatchedJoinRejected: true,
+      mismatchedJoinError: mismatch.error,
+      classicSnapshot: classicSummary,
+      survivalSnapshot: survivalSummary,
+    };
+  } finally {
+    for (const room of [mismatchedRoom, survivalRoom, classicRoom]) {
+      if (!room) continue;
+      try {
+        room.onError?.clear?.();
+        if (room.connection?.events) room.connection.events.onerror = () => {};
+        if (room.connection?.transport?.ws) room.connection.transport.ws.onerror = () => {};
+        await withTimeout(room.leave(true), 2_000, "mode isolation room leave");
+      } catch {
+        /* ignore room shutdown races */
+      }
+    }
+  }
+}
+
 async function run() {
   if (typeof WebSocket === "undefined") {
     throw new Error("This Node runtime does not expose WebSocket. Use Node 22+ for online modes smoke.");
@@ -200,7 +310,12 @@ async function run() {
   if (EXPECT_BUILD_COMMIT && !String(health.build?.commit || "").startsWith(EXPECT_BUILD_COMMIT)) {
     throw new Error(`Server build commit ${health.build?.commit || "missing"} did not match expected ${EXPECT_BUILD_COMMIT}`);
   }
-  const client = new Client(ENDPOINT);
+  if (EXPECT_BUILD_SOURCE_FINGERPRINT && health.build?.sourceFingerprint !== EXPECT_BUILD_SOURCE_FINGERPRINT) {
+    throw new Error(`Server source fingerprint ${health.build?.sourceFingerprint || "missing"} did not match expected ${EXPECT_BUILD_SOURCE_FINGERPRINT}`);
+  }
+  const modeIsolation = await smokeModeIsolation();
+  const ClientClass = await loadColyseusClient();
+  const client = new ClientClass(ENDPOINT);
   const results = [];
   for (const mode of modes) {
     results.push(await smokeMode(client, mode));
@@ -211,6 +326,7 @@ async function run() {
     pass: true,
     capturedAt: new Date().toISOString(),
     health,
+    modeIsolation,
     modes: results,
     totalElapsedMs: Math.round(performance.now() - startedAt),
   };
@@ -234,5 +350,5 @@ run().catch(async (error) => {
     /* ignore report write failures while exiting */
   }
   console.error(error.stack || error.message || error);
-  process.exit(1);
+  process.exitCode = 1;
 });

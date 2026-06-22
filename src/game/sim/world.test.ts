@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeWorld, type World } from "./world";
-import { CONFIG, MODES } from "../data/config";
+import { BOT_DIFFICULTIES, CONFIG, MODES } from "../data/config";
 import { buildSnapshot } from "../net/snapshot";
 import { NetView } from "../net/NetView";
 
@@ -289,6 +289,29 @@ describe("World launch-critical mechanics", () => {
     expect(player.respawnTimer).toBeGreaterThan(0);
   });
 
+  it("survival timer winners are chosen by lives before score", () => {
+    const world = makeWorld("survival", 4, 6262);
+    world.startMatch();
+    world.forceAdvance();
+    for (const p of world.players) p.isBot = false;
+    world.players[0].lives = 1;
+    world.players[0].score = 40;
+    world.players[1].lives = 2;
+    world.players[1].score = 2;
+    world.players[2].lives = 1;
+    world.players[2].score = 15;
+    world.players[3].lives = 0;
+    world.players[3].score = 80;
+    world.roundTime = 0.01;
+
+    world.tick(0.08);
+    expect(world.phase).toBe("roundEnd");
+
+    world.forceAdvance();
+    expect(world.phase).toBe("matchEnd");
+    expect(world.winnerId).toBe(1);
+  });
+
   it("keeps a tied sudden-death round alive and ends once the tie breaks", () => {
     const world = makeWorld("classic", 2, 6789);
     world.startMatch();
@@ -365,6 +388,37 @@ describe("World launch-critical mechanics", () => {
     expect(marble.carrier).toBe(human.id);
   });
 
+  it("emits cluster milestone feedback only at satisfying carried thresholds", () => {
+    const world = startPlaying(false);
+    for (const p of world.players) p.isBot = false;
+    const human = world.players[world.humanId];
+    human.pos = { x: 0, z: 0 };
+    human.vel = { x: 0, z: 0 };
+
+    for (let i = 0; i < 6; i++) {
+      const marble = world.marbles[i];
+      marble.state = "free";
+      marble.carrier = -1;
+      marble.y = 0;
+      marble.vy = 0;
+      marble.pos = { x: 0.22 + i * 0.03, z: 0.24 };
+      marble.vel = { x: 0, z: 0 };
+    }
+    for (const marble of world.marbles.slice(6)) {
+      marble.state = "dead";
+      marble.carrier = -1;
+      marble.deadTimer = 999;
+    }
+
+    world.setInput(human.id, { moveX: 0, moveZ: 0, magnet: true, dash: false, activate: false });
+    world.tick(0.04);
+    const fx = world.drainFx();
+
+    expect(human.cluster).toHaveLength(6);
+    expect(fx.filter((ev) => ev.kind === "pickup")).toHaveLength(6);
+    expect(fx.filter((ev) => ev.kind === "cluster").map((ev) => ev.count)).toEqual([3, 6]);
+  });
+
   it("treats dash as a one-frame press gated by cooldown", () => {
     const world = startPlaying(false);
     for (const p of world.players) p.isBot = false;
@@ -391,6 +445,39 @@ describe("World launch-critical mechanics", () => {
     expect(human.dashTimer).toBeLessThanOrEqual(0);
     expect(human.dashCooldown).toBeGreaterThan(0);
     expect(human.dashCooldown).toBeLessThan(firstCooldown);
+  });
+
+  it("sanitizes malformed player input before it can corrupt physics", () => {
+    const world = startPlaying(false);
+    for (const p of world.players) p.isBot = false;
+    const human = world.players[0];
+    human.pos = { x: 0, z: 0 };
+    human.vel = { x: 0, z: 0 };
+
+    world.setInput(human.id, {
+      moveX: Number.POSITIVE_INFINITY,
+      moveZ: Number.NaN,
+      magnet: true,
+      dash: "true" as unknown as boolean,
+      activate: "true" as unknown as boolean,
+    });
+    world.tick(0.04);
+
+    expect(human.moveX).toBe(0);
+    expect(human.moveZ).toBe(0);
+    expect(human.magnetActive).toBe(true);
+    expect(human.dashTimer).toBe(0);
+    expectFiniteNumber(human.pos.x, "human pos.x after malformed input");
+    expectFiniteNumber(human.pos.z, "human pos.z after malformed input");
+
+    world.setInput(human.id, { moveX: 9, moveZ: -9, magnet: false, dash: true, activate: false });
+    world.tick(0.04);
+
+    expect(human.moveX).toBe(1);
+    expect(human.moveZ).toBe(-1);
+    expect(human.dashTimer).toBeGreaterThan(0);
+    expectFiniteNumber(human.vel.x, "human vel.x after clamped input");
+    expectFiniteNumber(human.vel.z, "human vel.z after clamped input");
   });
 
   it("shock pulse knocks loose nearby enemy carried marbles", () => {
@@ -496,10 +583,63 @@ describe("World launch-critical mechanics", () => {
     expect(view.goals).toHaveLength(snapshot.goals.length);
     expect(view.buttons).toHaveLength(snapshot.buttons.length);
     expect(view.rings).toHaveLength(snapshot.rings.length);
+    expect(view.rings.map((ring) => ring.targetGoalOwnerId)).toEqual(world.rings.map((ring) => ring.targetGoalOwnerId));
+    expect(view.rings.map((ring) => ring.spin)).toEqual(snapshot.rings.map((ring) => ring.sp));
 
     view.setInput(0, { moveX: 1, moveZ: 0, magnet: true, dash: true, activate: false });
     view.flushInput(1 / 20);
     expect(sent).toHaveLength(1);
+  });
+
+  it("sanitizes and snapshots NetView outbound input before clearing one-shot actions", () => {
+    const sent: unknown[] = [];
+    const view = new NetView((type, data) => sent.push([type, data]));
+
+    view.setInput(0, {
+      moveX: Number.NEGATIVE_INFINITY,
+      moveZ: 8,
+      magnet: true,
+      dash: "true" as unknown as boolean,
+      activate: true,
+    });
+    view.flushInput(1 / 20);
+
+    expect(sent).toEqual([[
+      "input",
+      { moveX: 0, moveZ: 1, magnet: true, dash: false, activate: true },
+    ]]);
+  });
+
+  it("throttles continuous NetView input while flushing one-shot actions immediately", () => {
+    const sent: unknown[] = [];
+    const view = new NetView((type, data) => sent.push([type, data]));
+
+    view.setInput(0, { moveX: 0.4, moveZ: -0.3, magnet: true, dash: false, activate: false });
+    view.flushInput(1 / 120);
+
+    expect(sent).toHaveLength(0);
+
+    view.flushInput(1 / 120);
+    view.flushInput(1 / 120);
+    view.flushInput(1 / 120);
+    view.flushInput(1 / 120);
+
+    expect(sent).toEqual([["input", { moveX: 0.4, moveZ: -0.3, magnet: true, dash: false, activate: false }]]);
+
+    view.setInput(0, { moveX: 0, moveZ: 0, magnet: false, dash: true, activate: false });
+    view.tick(1 / 60);
+    view.flushInput(0);
+
+    expect(sent[1]).toEqual(["input", { moveX: 0, moveZ: 0, magnet: false, dash: true, activate: false }]);
+  });
+
+  it("does not let a NetView client request authoritative round skips", () => {
+    const sent: unknown[] = [];
+    const view = new NetView((type, data) => sent.push([type, data]));
+
+    view.forceAdvance();
+
+    expect(sent).toHaveLength(0);
   });
 
   it("sends bots carrying enough marbles back toward their own goal", () => {
@@ -518,6 +658,32 @@ describe("World launch-critical mechanics", () => {
     expect(bot.botState).toBe("bank");
     expect(bot.wantMagnet).toBe(true);
     expect(bot.moveX * toGoal.x + bot.moveZ * toGoal.z).toBeGreaterThan(0);
+  });
+
+  it("uses bot difficulty to tune retarget cadence and movement pressure", () => {
+    const easy = makeWorld("classic", 4, 24680, { botDifficulty: "easy" });
+    const hard = makeWorld("classic", 4, 24680, { botDifficulty: "hard" });
+    easy.startMatch();
+    hard.startMatch();
+    easy.forceAdvance();
+    hard.forceAdvance();
+
+    const easyBot = easy.players[1];
+    const hardBot = hard.players[1];
+    easyBot.botTimer = 0;
+    hardBot.botTimer = 0;
+    easyBot.pos = { x: 0, z: 0 };
+    hardBot.pos = { x: 0, z: 0 };
+    easyBot.vel = { x: 0, z: 0 };
+    hardBot.vel = { x: 0, z: 0 };
+
+    easy.tick(0.04);
+    hard.tick(0.04);
+
+    expect(easy.botDifficulty).toBe("easy");
+    expect(hard.botDifficulty).toBe("hard");
+    expect(easyBot.botTimer).toBeGreaterThan(hardBot.botTimer);
+    expect(BOT_DIFFICULTIES.easy.speedMult).toBeLessThan(BOT_DIFFICULTIES.hard.speedMult);
   });
 
   it("respawns inactive powerup pickups without changing their render identity", () => {

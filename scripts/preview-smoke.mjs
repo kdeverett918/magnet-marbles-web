@@ -9,6 +9,7 @@ const OUTPUT = process.env.PREVIEW_OUTPUT || "outputs/preview-smoke.json";
 const SCREENSHOT = process.env.PREVIEW_SCREENSHOT || "outputs/preview-smoke.png";
 const MENU_SCREENSHOT = process.env.PREVIEW_MENU_SCREENSHOT || "outputs/preview-menu.png";
 const EXPECT_BUILD_COMMIT = process.env.PREVIEW_EXPECT_BUILD_COMMIT || "";
+const EXPECT_SOURCE_FINGERPRINT = process.env.PREVIEW_EXPECT_SOURCE_FINGERPRINT || "";
 const VIEWPORT_WIDTH = Number(process.env.PREVIEW_WIDTH || 390);
 const VIEWPORT_HEIGHT = Number(process.env.PREVIEW_HEIGHT || 844);
 const IS_MOBILE = process.env.PREVIEW_MOBILE ? process.env.PREVIEW_MOBILE !== "false" : VIEWPORT_WIDTH <= 640;
@@ -142,6 +143,7 @@ async function run() {
           branch: document.documentElement.dataset.buildBranch ?? "",
           dirty: document.documentElement.dataset.buildDirty ?? "",
           builtAt: document.documentElement.dataset.buildTime ?? "",
+          sourceFingerprint: document.documentElement.dataset.sourceFingerprint ?? "",
         },
         hasMenu: Boolean(document.querySelector(".menu")),
         hasDevClient: resources.some((name) => name.includes("/@vite/client")),
@@ -181,6 +183,9 @@ async function run() {
     if (!boot.build?.commit) throw new Error("Build metadata missing from frontend runtime");
     if (EXPECT_BUILD_COMMIT && !String(boot.build.commit).startsWith(EXPECT_BUILD_COMMIT)) {
       throw new Error(`Frontend build commit ${boot.build.commit} did not match expected ${EXPECT_BUILD_COMMIT}`);
+    }
+    if (EXPECT_SOURCE_FINGERPRINT && boot.build.sourceFingerprint !== EXPECT_SOURCE_FINGERPRINT) {
+      throw new Error(`Frontend source fingerprint ${boot.build.sourceFingerprint || "missing"} did not match expected ${EXPECT_SOURCE_FINGERPRINT}`);
     }
     if (boot.hasDevClient || boot.hasSourceModules) throw new Error("Preview loaded Vite dev resources instead of production assets");
     if (boot.assetCount < 2) throw new Error(`Preview did not load production assets. assetCount=${boot.assetCount}`);

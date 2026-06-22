@@ -76,6 +76,8 @@ export interface SnapRing {
   x: number;
   z: number;
   r: number;
+  tg: number; // target goal owner
+  sp: number; // spin phase
 }
 
 export interface Snapshot {

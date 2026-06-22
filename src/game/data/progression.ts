@@ -7,6 +7,8 @@ export interface TrailCosmetic {
   cost: number;
   color: string;
   skinColor: string;
+  skinAccent: string;
+  finish: string;
   widthMult: number;
   length: number;
 }
@@ -46,6 +48,8 @@ export const TRAIL_COSMETICS: TrailCosmetic[] = [
     cost: 0,
     color: "#56d0ff",
     skinColor: "#f24447",
+    skinAccent: "#ffd6a1",
+    finish: "glass comet core",
     widthMult: 1,
     length: 4,
   },
@@ -56,6 +60,8 @@ export const TRAIL_COSMETICS: TrailCosmetic[] = [
     cost: 4,
     color: "#ff4dd2",
     skinColor: "#ff5fae",
+    skinAccent: "#63d7ff",
+    finish: "split candy swirl",
     widthMult: 1.08,
     length: 4.8,
   },
@@ -66,6 +72,8 @@ export const TRAIL_COSMETICS: TrailCosmetic[] = [
     cost: 8,
     color: "#f2c14e",
     skinColor: "#facc33",
+    skinAccent: "#fff2a8",
+    finish: "trophy cat's-eye",
     widthMult: 1.12,
     length: 5.2,
   },
@@ -76,6 +84,8 @@ export const TRAIL_COSMETICS: TrailCosmetic[] = [
     cost: 12,
     color: "#4dcc66",
     skinColor: "#38e0a0",
+    skinAccent: "#d5fff3",
+    finish: "neon circuit vein",
     widthMult: 1.16,
     length: 5.6,
   },
@@ -86,6 +96,8 @@ export const TRAIL_COSMETICS: TrailCosmetic[] = [
     cost: 16,
     color: "#b66bff",
     skinColor: "#8f6bff",
+    skinAccent: "#ff8bef",
+    finish: "charged storm vein",
     widthMult: 1.2,
     length: 6,
   },
@@ -96,6 +108,8 @@ export const TRAIL_COSMETICS: TrailCosmetic[] = [
     cost: 22,
     color: "#ffffff",
     skinColor: "#d9e4ff",
+    skinAccent: "#ffd76a",
+    finish: "pearl prestige core",
     widthMult: 1.28,
     length: 6.4,
   },

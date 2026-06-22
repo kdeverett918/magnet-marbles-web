@@ -5,10 +5,11 @@ import * as THREE from "three";
  * Gives a glossy candy-glass look: internal swirl core, fresnel rim,
  * crisp specular highlight, subtle iridescence — matching the style anchors.
  */
-export function makeMarbleMaterial(colorHex: string): THREE.ShaderMaterial {
+export function makeMarbleMaterial(colorHex: string, accentHex = "#ffffff"): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       uColor: { value: new THREE.Color(colorHex) },
+      uAccent: { value: new THREE.Color(accentHex) },
       uTime: { value: 0 },
       uSwirl: { value: Math.random() * 6.28 },
       uLightDir: { value: new THREE.Vector3(0.4, 0.9, 0.5).normalize() },
@@ -29,6 +30,7 @@ export function makeMarbleMaterial(colorHex: string): THREE.ShaderMaterial {
     fragmentShader: /* glsl */ `
       precision highp float;
       uniform vec3 uColor;
+      uniform vec3 uAccent;
       uniform float uTime;
       uniform float uSwirl;
       uniform vec3 uLightDir;
@@ -55,9 +57,9 @@ export function makeMarbleMaterial(colorHex: string): THREE.ShaderMaterial {
         float depth = mix(1.0, 0.45, smoothstep(0.2, 1.0, rad));
         vec3 deep = uColor * 0.28;
         vec3 mid  = uColor * 0.95;
-        vec3 lite = mix(uColor, vec3(1.0), 0.7);
+        vec3 lite = mix(uAccent, vec3(1.0), 0.62);
         vec3 base = mix(deep, mid, core) * depth;
-        base = mix(base, lite, ribbon * 0.7);
+        base = mix(base, lite, ribbon * 0.78);
 
         // --- specular: tight hotspot + broad sheen ---
         vec3 H = normalize(uLightDir + V);
@@ -67,13 +69,14 @@ export function makeMarbleMaterial(colorHex: string): THREE.ShaderMaterial {
 
         // --- iridescent fresnel rim ---
         vec3 irid = 0.5 + 0.5 * cos(6.2831 * (fres * 1.2 + vec3(0.0, 0.33, 0.66)));
-        vec3 rim = mix(uColor * 1.2, irid, 0.55) * fres * 1.5;
+        vec3 rimColor = mix(uColor, uAccent, 0.38);
+        vec3 rim = mix(rimColor * 1.2, irid, 0.55) * fres * 1.5;
 
         // subtle inner sparkle
         float spk = pow(max(0.0, sin(rad * 60.0 + ang * 8.0 + uSwirl)), 30.0) * (1.0 - rad);
 
-        vec3 col = base + rim + vec3(hot) * 1.4 + vec3(sheen) + spk * 0.4;
-        col += uColor * 0.06; // ambient lift
+        vec3 col = base + rim + vec3(hot) * 1.4 + vec3(sheen) + uAccent * spk * 0.5;
+        col += mix(uColor, uAccent, 0.18) * 0.06; // ambient lift
         gl_FragColor = vec4(col, 1.0);
         #include <colorspace_fragment>
       }

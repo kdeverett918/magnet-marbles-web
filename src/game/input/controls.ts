@@ -81,18 +81,6 @@ export function endDrag() {
   recompute(); // fall back to keyboard movement (or stop)
 }
 
-// double-tap to dash (touch + mouse)
-let lastTap = 0;
-export function registerTapDash() {
-  const now = performance.now();
-  if (now - lastTap < 320) {
-    input.dash = true;
-    lastTap = 0;
-  } else {
-    lastTap = now;
-  }
-}
-
 let installed = false;
 export function installKeyboard(): () => void {
   if (installed) return () => undefined;
@@ -140,7 +128,7 @@ export function clearEdges() {
   input.activate = false;
 }
 
-export function resetInputForTests() {
+export function resetInput() {
   pressed.clear();
   keyMove.x = 0;
   keyMove.z = 0;
@@ -152,10 +140,13 @@ export function resetInputForTests() {
   drag.active = false;
   drag.x = 0;
   drag.z = 0;
-  lastTap = 0;
   input.moveX = 0;
   input.moveZ = 0;
   input.magnet = false;
   input.dash = false;
   input.activate = false;
+}
+
+export function resetInputForTests() {
+  resetInput();
 }

@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 
 export const DEFAULT_CDP_PORT = 9559;
+export const BROWSER_AUTOMATION_ENV = "MM_ALLOW_BROWSER";
+export const BROWSER_AUTOMATION_ALIASES = ["ALLOW_BROWSER_AUTOMATION"];
 
 const browserCandidates = [
   process.env.CHROME_PATH,
@@ -52,6 +54,15 @@ export async function cdpReady(port) {
   } catch {
     return false;
   }
+}
+
+export function browserLaunchAllowed(env = process.env) {
+  return env[BROWSER_AUTOMATION_ENV] === "1"
+    || BROWSER_AUTOMATION_ALIASES.some((name) => env[name] === "1");
+}
+
+export function browserLaunchOptInMessage() {
+  return `Browser automation is disabled by default. Set ${BROWSER_AUTOMATION_ENV}=1 before running Chrome/CDP smoke tests.`;
 }
 
 export async function waitForDebuggerUrl(port, timeoutMs = 10_000) {
@@ -109,6 +120,9 @@ export async function startCdpBrowser({
   profilePrefix = "magnet-marbles-chrome-",
   windowSize = "390,844",
 } = {}) {
+  if (!browserLaunchAllowed()) {
+    throw new Error(browserLaunchOptInMessage());
+  }
   if (await cdpReady(port)) {
     return { chrome: "reused", launched: false, port };
   }

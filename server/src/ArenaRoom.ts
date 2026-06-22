@@ -1,12 +1,21 @@
-import { Room, type Client } from "@colyseus/core";
+import { ErrorCode, Room, ServerError, type Client } from "@colyseus/core";
 import { World } from "../../src/game/sim/world";
 import { MODES } from "../../src/game/data/config";
 import { buildSnapshot } from "../../src/game/net/snapshot";
 import type { FxEvent } from "../../src/game/data/types";
 import type { NetInput } from "../../src/game/net/protocol";
+import { sanitizeInputIntent } from "../../src/game/sim/inputIntent";
 
 const SIM_HZ = 30;
 const SNAP_HZ = 20;
+
+interface ArenaJoinOptions {
+  mode?: string;
+}
+
+function modeMismatchError(roomMode: string, requestedMode: string) {
+  return new ServerError(ErrorCode.AUTH_FAILED, `Room mode mismatch: room is ${roomMode}, request was ${requestedMode}`);
+}
 
 /** Authoritative arena: runs the shared World sim; empty seats are bots. */
 export class ArenaRoom extends Room {
@@ -25,15 +34,35 @@ export class ArenaRoom extends Room {
     this.world.startMatch();
 
     this.onMessage("input", (client: Client, data: NetInput) => this.onInput(client, data));
-    this.onMessage("advance", () => this.world.forceAdvance());
 
     this.setSimulationInterval((dtMs) => this.update(dtMs / 1000), 1000 / SIM_HZ);
   }
 
-  onJoin(client: Client) {
+  onAuth(_client: Client, options: ArenaJoinOptions = {}) {
+    if (options.mode && options.mode !== this.world.mode.id) {
+      throw modeMismatchError(this.world.mode.id, options.mode);
+    }
+    return true;
+  }
+
+  onJoin(client: Client, options: ArenaJoinOptions = {}) {
+    if (options.mode && options.mode !== this.world.mode.id) {
+      throw modeMismatchError(this.world.mode.id, options.mode);
+    }
+
     const slot = this.world.players.findIndex((p) => p.isBot);
     const id = slot >= 0 ? slot : 0;
-    if (slot >= 0) this.world.players[slot].isBot = false;
+    if (slot >= 0) {
+      const player = this.world.players[slot];
+      player.isBot = false;
+      player.moveX = 0;
+      player.moveZ = 0;
+      player.wantMagnet = false;
+      player.wantDash = false;
+      player.wantActivate = false;
+      this.pendingDash[slot] = false;
+      this.pendingActivate[slot] = false;
+    }
     this.slotBySession.set(client.sessionId, id);
     client.send("welcome", { id });
     // immediate snapshot so the joiner sees the board right away
@@ -63,11 +92,12 @@ export class ArenaRoom extends Room {
     if (id === undefined) return;
     const p = this.world.players[id];
     if (!p) return;
-    p.moveX = data.moveX ?? 0;
-    p.moveZ = data.moveZ ?? 0;
-    p.wantMagnet = !!data.magnet;
-    if (data.dash) this.pendingDash[id] = true;
-    if (data.activate) this.pendingActivate[id] = true;
+    const input = sanitizeInputIntent(data);
+    p.moveX = input.moveX;
+    p.moveZ = input.moveZ;
+    p.wantMagnet = input.magnet;
+    if (input.dash) this.pendingDash[id] = true;
+    if (input.activate) this.pendingActivate[id] = true;
   }
 
   private update(dt: number) {

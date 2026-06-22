@@ -1,4 +1,4 @@
-import { CONFIG, MODES, POWERUP_META } from "../data/config";
+import { BOT_DIFFICULTIES, CONFIG, MODES, POWERUP_META, type BotDifficulty } from "../data/config";
 import {
   CANDY_COLORS,
   JUMBO_COLOR,
@@ -16,6 +16,7 @@ import {
   type RoundPhase,
 } from "../data/types";
 import { clamp, dist, dist2, len, lerp, moveToward, mulberry32 } from "./mathx";
+import { sanitizeInputIntent, type PlayerInputIntent } from "./inputIntent";
 
 const ALL_POWERUPS: PowerupType[] = [
   "magnetBurst",
@@ -33,6 +34,7 @@ export interface WorldOptions {
   totalPlayers: number; // 2..4
   seed?: number;
   tutorialAssist?: boolean;
+  botDifficulty?: BotDifficulty;
 }
 
 /**
@@ -56,6 +58,7 @@ export class World {
   phase: RoundPhase = "menu";
   humanId = 0; // which slot the local human controls (0 for single-player)
   tutorialAssist = false;
+  botDifficulty: BotDifficulty = "normal";
   humanBankedThisMatch = false;
   round = 1;
   roundTime = 0; // seconds remaining
@@ -76,6 +79,7 @@ export class World {
     this.mode = opts.mode;
     this.humans = opts.humans;
     this.tutorialAssist = !!opts.tutorialAssist;
+    this.botDifficulty = opts.botDifficulty ?? "normal";
     this.rng = mulberry32(opts.seed ?? 1337);
     this.setupPlayers(opts.totalPlayers);
   }
@@ -289,25 +293,20 @@ export class World {
   // ---------------------------------------------------------------- input
   setInput(
     playerId: number,
-    input: {
-      moveX: number;
-      moveZ: number;
-      magnet: boolean;
-      dash: boolean;
-      activate: boolean;
-    }
+    input: PlayerInputIntent
   ) {
     const p = this.players[playerId];
     if (!p) return;
-    p.moveX = input.moveX;
-    p.moveZ = input.moveZ;
-    p.wantMagnet = input.magnet;
+    const safe = sanitizeInputIntent(input);
+    p.moveX = safe.moveX;
+    p.moveZ = safe.moveZ;
+    p.wantMagnet = safe.magnet;
     // Edge-triggered inputs are accumulated (latched) until a fixed step
     // consumes them. The render loop runs faster than the 60Hz sim, so a dash /
     // activate press can land on a frame where no step runs — without latching
     // it would be overwritten and lost before the sim ever sees it.
-    p.wantDash = p.wantDash || !!input.dash;
-    p.wantActivate = p.wantActivate || !!input.activate;
+    p.wantDash = p.wantDash || safe.dash;
+    p.wantActivate = p.wantActivate || safe.activate;
   }
 
   /** Advance the match by real elapsed time, running fixed sub-steps. */
@@ -414,7 +413,9 @@ export class World {
     if (this.hasPU(p, "heavyCore")) speed *= CONFIG.combat.heavyCoreSpeedMult;
     const dashing = p.dashTimer > 0;
     if (dashing) speed = CONFIG.player.dashSpeed;
-    if (p.isBot && this.tutorialBotAssistActive()) speed *= TUTORIAL_BOT_SPEED_MULT;
+    if (p.isBot) {
+      speed *= this.tutorialBotAssistActive() ? TUTORIAL_BOT_SPEED_MULT : BOT_DIFFICULTIES[this.botDifficulty].speedMult;
+    }
 
     const mag = Math.hypot(p.moveX, p.moveZ);
     let tvx = 0;
@@ -492,6 +493,9 @@ export class World {
     m.orbitAngle = (idx % CONFIG.carry.perRing) * ((Math.PI * 2) / CONFIG.carry.perRing);
     p.cluster.push(m.id);
     this.fx.push({ kind: "pickup", x: m.pos.x, z: m.pos.z, color: m.colorHex });
+    if ((CONFIG.feedback.clusterMilestones as readonly number[]).includes(p.cluster.length)) {
+      this.fx.push({ kind: "cluster", x: p.pos.x, z: p.pos.z, color: p.colorHex, count: p.cluster.length });
+    }
   }
 
   // ---------------------------------------------------------------- carried orbit + banking
@@ -788,7 +792,7 @@ export class World {
         body.alive = false;
         if (this.mode.kind === "survival") {
           body.lives = Math.max(0, body.lives - 1);
-          body.respawnTimer = body.lives > 0 ? CONFIG.player.respawnTime : Number.POSITIVE_INFINITY;
+          body.respawnTimer = body.lives > 0 ? CONFIG.player.respawnTime : 0;
           if (body.lives <= 0) {
             body.vel = { x: 0, z: 0 };
             this.fx.push({ kind: "knockoff", x: body.pos.x, z: body.pos.z });
@@ -1047,16 +1051,17 @@ export class World {
   private botThink(p: Player, dt: number) {
     p.botTimer -= dt;
     const assist = this.tutorialBotAssistActive();
-    const skill = CONFIG.bot.skill * (assist ? 0.55 : 1);
+    const difficulty = BOT_DIFFICULTIES[this.botDifficulty];
+    const skill = clamp(CONFIG.bot.skill * difficulty.skillMult * (assist ? 0.55 : 1), 0.05, 1);
     const goal = this.goals[p.id];
 
     // periodic high-level decision
     if (p.botTimer <= 0) {
-      p.botTimer = CONFIG.bot.retargetEvery * (assist ? 1.45 : 1) * (0.7 + this.rng() * 0.6);
+      p.botTimer = CONFIG.bot.retargetEvery * (assist ? 1.45 : difficulty.retargetMult) * (0.7 + this.rng() * 0.6);
       const timeLeft = this.roundTime;
       if (p.cluster.length >= CONFIG.bot.bankWhenCluster || timeLeft < CONFIG.bot.bankWhenTimeLeft) {
         p.botState = "bank";
-      } else if (this.rng() < CONFIG.bot.attackChance * skill && p.cluster.length < 5) {
+      } else if (this.rng() < CONFIG.bot.attackChance * difficulty.attackMult * skill && p.cluster.length < 5) {
         // find a juicy carrier to rob
         let best = -1;
         let bestScore = 0;
@@ -1230,8 +1235,19 @@ export class World {
 
   private resolveWinnerId(): number {
     if (this.mode.kind === "survival") {
-      const alive = this.players.find((p) => p.lives > 0);
-      if (alive) return alive.id;
+      let winner: Player | null = null;
+      for (const p of this.players) {
+        if (!winner) {
+          winner = p;
+          continue;
+        }
+        if (p.lives > winner.lives) {
+          winner = p;
+        } else if (p.lives === winner.lives && p.score > winner.score) {
+          winner = p;
+        }
+      }
+      return winner?.id ?? -1;
     }
 
     if (this.mode.kind === "team-bank") {
@@ -1284,7 +1300,12 @@ export class World {
   }
 }
 
-export function makeWorld(modeId: string, totalPlayers: number, seed?: number, opts: { tutorialAssist?: boolean } = {}): World {
+export function makeWorld(
+  modeId: string,
+  totalPlayers: number,
+  seed?: number,
+  opts: { tutorialAssist?: boolean; botDifficulty?: BotDifficulty } = {},
+): World {
   const mode = MODES.find((m) => m.id === modeId) ?? MODES[0];
-  return new World({ mode, humans: 1, totalPlayers, seed, tutorialAssist: opts.tutorialAssist });
+  return new World({ mode, humans: 1, totalPlayers, seed, tutorialAssist: opts.tutorialAssist, botDifficulty: opts.botDifficulty });
 }

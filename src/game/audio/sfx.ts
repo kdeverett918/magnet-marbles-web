@@ -3,10 +3,8 @@ import type { FxEvent } from "../data/types";
 /**
  * Hybrid sound engine: generated SFX samples when available, synth fallback always.
  * Lazily created on first user gesture (browser autoplay policy).
+ * Background music is intentionally disabled; sound should only be short gameplay feedback.
  */
-// Suno-generated arcade music bed (instrumental). Falls back to the synth
-// arpeggio if the file fails to load.
-const MUSIC_URL = "./audio/music.mp3";
 const SAMPLE_URLS = {
   pickup: "./audio/sfx/pickup.mp3",
   bank: "./audio/sfx/bank.mp3",
@@ -21,59 +19,38 @@ type SampleName = keyof typeof SAMPLE_URLS;
 class SfxEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
-  private musicGain: GainNode | null = null;
   private enabled = true;
-  private musicTimer = 0;
-  private musicStep = 0;
-  private musicEl: HTMLAudioElement | null = null;
-  private realMusic = false;
+  private volume = 0.65;
   private samplesStarted = false;
   private sampleBuffers: Partial<Record<SampleName, AudioBuffer>> = {};
 
   setEnabled(on: boolean) {
     this.enabled = on;
-    if (this.master) this.master.gain.value = on ? 0.9 : 0;
-    if (this.musicEl) this.musicEl.muted = !on;
+    this.applyMasterGain();
+  }
+
+  setVolume(volume: number) {
+    this.volume = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0.65));
+    this.applyMasterGain();
+  }
+
+  private applyMasterGain() {
+    if (this.master) this.master.gain.value = this.enabled ? this.volume : 0;
   }
 
   ensure() {
     if (!this.enabled) return;
     if (this.ctx) {
       if (this.ctx.state === "suspended") void this.ctx.resume();
-      this.startMusic();
       return;
     }
     const Ctor = window.AudioContext || (window as any).webkitAudioContext;
     if (!Ctor) return;
     this.ctx = new Ctor();
     this.master = this.ctx.createGain();
-    this.master.gain.value = this.enabled ? 0.9 : 0;
+    this.applyMasterGain();
     this.master.connect(this.ctx.destination);
-    this.musicGain = this.ctx.createGain();
-    this.musicGain.gain.value = 0.16;
-    this.musicGain.connect(this.master);
-    this.startMusic();
     void this.preloadSamples();
-  }
-
-  /** Lazy-load the looping music track (needs a prior user gesture). */
-  private startMusic() {
-    if (this.musicEl) {
-      if (this.enabled && this.musicEl.paused) void this.musicEl.play().catch(() => undefined);
-      return;
-    }
-    const el = new Audio(MUSIC_URL);
-    el.loop = true;
-    el.volume = 0.32;
-    el.muted = !this.enabled;
-    el.addEventListener("canplaythrough", () => {
-      this.realMusic = true;
-    });
-    el.addEventListener("error", () => {
-      this.realMusic = false; // fall back to synth arpeggio
-    });
-    this.musicEl = el;
-    void el.play().catch(() => undefined);
   }
 
   private async preloadSamples() {
@@ -160,6 +137,12 @@ class SfxEngine {
           this.blip(520 + Math.random() * 120, 0.09, "triangle", 0.18, 900);
         }
         break;
+      case "cluster":
+        if (!this.sample("pickup", 0.34, ev.count >= 10 ? 0.78 : 0.86)) {
+          this.blip(480, 0.08, "triangle", 0.14, 720);
+        }
+        this.blip(ev.count >= 10 ? 1040 : 840, 0.12, "sine", 0.12, ev.count >= 18 ? 1680 : 1260);
+        break;
       case "bank":
         this.sample("bank", ev.big ? 0.62 : 0.42, ev.big ? 0.92 : 1.04);
         this.blip(ev.big ? 440 : 660, 0.16, "square", 0.22, ev.big ? 1320 : 990);
@@ -198,23 +181,6 @@ class SfxEngine {
 
   countdownBeep(go: boolean) {
     this.blip(go ? 880 : 520, go ? 0.3 : 0.12, "square", 0.25, go ? 1320 : undefined);
-  }
-
-  // ambient arpeggio bed so the arena never feels silent (synth fallback only)
-  music(dt: number, intensity: number) {
-    if (this.realMusic) return; // Suno track is playing
-    if (!this.ctx || !this.musicGain || !this.enabled) return;
-    this.musicTimer -= dt;
-    if (this.musicTimer > 0) return;
-    this.musicTimer = 0.34 - intensity * 0.12;
-    const scale = [0, 3, 5, 7, 10, 12, 15];
-    const root = 196; // G3
-    const note = scale[this.musicStep % scale.length];
-    const oct = Math.floor(this.musicStep / scale.length) % 2;
-    const freq = root * Math.pow(2, (note + oct * 12) / 12);
-    this.blip(freq, 0.5, "triangle", 0.08, undefined, this.musicGain);
-    if (this.musicStep % 4 === 0) this.blip(freq / 2, 0.6, "sine", 0.06, undefined, this.musicGain);
-    this.musicStep = (this.musicStep + (Math.random() < 0.3 ? 2 : 1)) % 28;
   }
 }
 

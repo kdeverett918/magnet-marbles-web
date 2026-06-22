@@ -1,5 +1,16 @@
 import type { ModeDef, PowerupType } from "./types";
 
+export type BotDifficulty = "easy" | "normal" | "hard";
+
+export const BOT_DIFFICULTIES: Record<
+  BotDifficulty,
+  { label: string; skillMult: number; attackMult: number; retargetMult: number; speedMult: number }
+> = {
+  easy: { label: "Easy", skillMult: 0.68, attackMult: 0.55, retargetMult: 1.35, speedMult: 0.86 },
+  normal: { label: "Normal", skillMult: 1.0, attackMult: 1.0, retargetMult: 1.0, speedMult: 1.0 },
+  hard: { label: "Hard", skillMult: 1.18, attackMult: 1.35, retargetMult: 0.78, speedMult: 1.08 },
+};
+
 /**
  * All gameplay tunables in one place (mirrors the Unity GameConfig ScriptableObject).
  * Change feel here, not scattered through the sim.
@@ -67,6 +78,11 @@ export const CONFIG = {
     knockoffBonus: 2, // points to attacker for knocking a carrier off
   },
 
+  // --- Reward readability ---
+  feedback: {
+    clusterMilestones: [3, 6, 10, 18],
+  },
+
   // --- Bump / steal / knock-off ---
   combat: {
     bumpSpeed: 7.5, // relative speed to trigger a steal
@@ -115,6 +131,7 @@ export const CONFIG = {
     attackChance: 0.28, // chance to switch to attack on retarget
     skill: 0.82, // 0..1, scaled by BotDirector
     retargetEvery: 1.1,
+    difficulties: BOT_DIFFICULTIES,
   },
 
   // --- Camera --- symmetric whole-table framing (all 4 goals + rim visible)

@@ -154,6 +154,7 @@ export interface ModeDef {
 /** One-shot visual events the sim emits; the render layer drains and plays them. */
 export type FxEvent =
   | { kind: "pickup"; x: number; z: number; color: string }
+  | { kind: "cluster"; x: number; z: number; color: string; count: number }
   | { kind: "bank"; x: number; z: number; color: string; big: boolean }
   | { kind: "hit"; x: number; z: number }
   | { kind: "steal"; x: number; z: number; color: string }

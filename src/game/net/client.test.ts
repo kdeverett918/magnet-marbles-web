@@ -47,5 +47,8 @@ describe("online client cold-start handling", () => {
       "Online server is waking or unreachable. Wait a moment, then retry.",
     );
     expect(formatJoinError(new Error("not found"), true)).toBe("Room not found. Check the code and retry.");
+    expect(formatJoinError(new Error("Room mode mismatch: room is classic, request was survival"), true)).toBe(
+      "That room code is for a different mode. Select that mode or use another code.",
+    );
   });
 });
