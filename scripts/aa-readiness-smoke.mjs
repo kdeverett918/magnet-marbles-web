@@ -65,6 +65,7 @@ async function run() {
   const main = await text("src/main.tsx");
   const serviceWorkerRegistration = await text("src/game/serviceWorker.ts");
   const serviceWorker = await text("public/service-worker.js");
+  const serviceWorkerSmoke = await text("scripts/service-worker-smoke.mjs");
   const viteConfig = await text("vite.config.ts");
   const config = await text("src/game/data/config.ts");
   const feedback = await text("src/game/data/feedback.ts");
@@ -506,6 +507,21 @@ async function run() {
     "cacheFirst",
   ]),
   "PWA service worker skips local development hosts, caches the app shell/SFX, purges removed music, keeps build metadata network-first, and is enforced by metadata smoke");
+  add("mobile:pwa-app-shell-behavior-smoke", scripts["sw:smoke"] === "node scripts/service-worker-smoke.mjs"
+    && noBrowser.includes("web:service-worker-smoke")
+    && includesEvery(serviceWorkerSmoke, [
+      "vm.runInContext",
+      "FakeCaches",
+      "dispatchLifecycle",
+      "dispatchFetch",
+      "removed music should return 410",
+      "build.json should use network-first response",
+      "index.html fallback should use precached app shell",
+      "SFX should be served cache-first from precache",
+      "cross-origin backend requests must not be intercepted",
+      "browserAutomation: false",
+    ]),
+  "Service-worker install/activate/fetch behavior is executed in a no-browser fake worker environment, including offline fallback and removed-music behavior");
 
   const distJsForServiceWorker = await Promise.all(
     (await walk("dist", (path) => extname(path).toLowerCase() === ".js"))
@@ -667,6 +683,7 @@ async function run() {
     ".mp3",
     "TEXT_EXTENSIONS",
   ]) && includesEvery(sourceFingerprintSmoke, [
+    "scripts/service-worker-smoke.mjs",
     "src/vite-env.d.ts",
     "src/game/serviceWorker.ts",
     "public/service-worker.js",
@@ -722,6 +739,7 @@ async function run() {
     "build-info:smoke",
     "metadata:smoke",
     "ip:safety",
+    "sw:smoke",
     "assets:smoke",
     "dist:budget",
     "browser:guard",

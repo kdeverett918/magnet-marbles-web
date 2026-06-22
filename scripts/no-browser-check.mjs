@@ -239,6 +239,10 @@ async function run() {
       METADATA_PUBLIC_ROOT: "dist",
       METADATA_OUTPUT: "outputs/metadata-smoke-dist-no-browser.json",
     }));
+    await step("web:service-worker-smoke", () => npmRun("sw:smoke", {
+      SERVICE_WORKER_PATH: "dist/service-worker.js",
+      SERVICE_WORKER_OUTPUT: "outputs/service-worker-smoke-no-browser.json",
+    }));
     await step("web:ip-safety-smoke", () => npmRun("ip:safety", {
       IP_SAFETY_OUTPUT: "outputs/ip-safety-smoke-no-browser.json",
     }));

@@ -23,6 +23,7 @@
     "build-info:smoke": "node scripts/build-info-smoke.mjs",
     "source:fingerprint": "node scripts/source-fingerprint-smoke.mjs",
     "aa:readiness": "node scripts/aa-readiness-smoke.mjs",
+    "sw:smoke": "node scripts/service-worker-smoke.mjs",
     "assets:smoke": "node scripts/assets-smoke.mjs",
     "dist:budget": "node scripts/dist-budget-smoke.mjs",
     "browser:guard": "node scripts/browser-guard-smoke.mjs",

@@ -15,6 +15,7 @@ const requiredFiles = [
   "scripts/lib/source-fingerprint.cjs",
   "scripts/ip-safety-smoke.mjs",
   "scripts/clean-exit-smoke.mjs",
+  "scripts/service-worker-smoke.mjs",
   "vite.config.ts",
   "server/scripts/build.mjs",
   "server/src/index.ts",
