@@ -8,12 +8,11 @@ services:
     name: magnet-marbles-server
     repo: https://github.com/kdeverett918/magnet-marbles-web
     branch: main
-    rootDir: server
     # Production multiplayer must stay warm; free-tier cold starts break the
     # first-join feel and online smoke reliability.
     plan: starter
-    buildCommand: npm ci && npm run build
-    startCommand: npm start
+    buildCommand: npm ci --prefix server && npm run build --prefix server
+    startCommand: npm start --prefix server
     healthCheckPath: /health
     autoDeploy: true
 
