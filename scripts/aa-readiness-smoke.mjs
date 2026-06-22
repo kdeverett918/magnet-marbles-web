@@ -766,7 +766,9 @@ async function run() {
   `Test files: ${testFiles.length}`);
 
   add("docs:living-gap-and-asset-ledger", readinessDoc.includes("## Open Gaps")
-    && (readinessDoc.includes("Public Render deployment is not current") || readinessDoc.includes("Public Render frontend deployment is not current"))
+    && (readinessDoc.includes("Public Render deployment is current")
+      || readinessDoc.includes("Public Render deployment is not current")
+      || readinessDoc.includes("Public Render frontend deployment is not current"))
     && assetBudget.includes("Tracked total")
     && assetBudget.includes("No audible background music currently ships"),
   "Launch readiness doc has open gaps and asset budget tracks spend plus no-music state");

@@ -2,7 +2,7 @@
   "name": "magnet-marbles-server",
   "private": true,
   "version": "1.0.0",
-  "description": "Authoritative Colyseus server for Magnet Marbles online multiplayer.",
+  "description": "Authoritative Colyseus server for Magnet Marbles live online multiplayer.",
   "main": "dist/index.js",
   "engines": {
     "node": ">=22"
