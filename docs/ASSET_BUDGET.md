@@ -13,10 +13,10 @@ Budget authorized by user: `$400`.
 | 2026-06-21 | Ludo `createSoundEffect` | Magnet Burst | 2 credits | Makes the strongest magnet moment audible. | `public/audio/sfx/magnet-burst.mp3` |
 | 2026-06-21 | Ludo `createSoundEffect` | Fall/rim cue | 2 credits | Adds consequence and table-edge tension. | `public/audio/sfx/fall.mp3` |
 | 2026-06-21 | Local procedural generator | PWA icons and social preview | `$0` | Replaces favicon-only install art with correctly sized mobile launch assets, maskable icon, and share card. | `public/icons/*.png`, `public/social-card.png`, `scripts/generate-icons.mjs` |
-| 2026-06-22 | Local removal | Removed arcade music bed | `$0` | Current loop was too loud and hurt the feel; the web build is SFX-only until a quieter, reviewed loop is added. | Deleted `public/audio/music.mp3` |
+| 2026-06-22 | Local removal | Removed arcade music bed | `$0` | Current loop was too loud and hurt the feel; the web build is SFX-only until a quieter, reviewed loop is added. | Runtime music removed; `public/audio/music.mp3` replaced by a 1.3 KB silent tombstone to overwrite stale static deploys |
 | 2026-06-22 | Local tuning | SFX master volume control | `$0` | Keeps generated SFX punchy without being loud by default; gives players a menu/pause volume slider. | `src/game/audio/sfx.ts`, `src/game/store.ts`, `src/game/ui/MainMenu.tsx`, `src/game/ui/Overlays.tsx` |
 
-Tracked total this pass: `12` Ludo credits. No Meshy/paid 3D generation used; icon/share art is locally generated. No background music currently ships, SFX defaults to `65%` master volume, and `npm run assets:smoke` now fails if the removed `music.mp3` reappears in `public/` or `dist/`.
+Tracked total this pass: `12` Ludo credits. No Meshy/paid 3D generation used; icon/share art is locally generated. No audible background music currently ships, SFX defaults to `65%` master volume, and `npm run assets:smoke` plus `npm run dist:budget` fail if `audio/music.mp3` becomes anything larger than a tiny silent stale-cache tombstone.
 
 ## Policy
 

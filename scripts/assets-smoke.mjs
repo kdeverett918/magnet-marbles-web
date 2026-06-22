@@ -3,7 +3,8 @@ import { join } from "node:path";
 
 const OUTPUT = process.env.ASSETS_OUTPUT || "outputs/assets-smoke.json";
 const MIN_SFX_BYTES = 4_000;
-const FORBIDDEN_MUSIC = ["public/audio/music.mp3", "dist/audio/music.mp3"];
+const MUSIC_TOMBSTONE_MAX_BYTES = 20_000;
+const MUSIC_TOMBSTONES = ["public/audio/music.mp3", "dist/audio/music.mp3"];
 const EXPECTED_SFX = [
   "pickup.mp3",
   "bank.mp3",
@@ -20,14 +21,13 @@ async function fileReport(root, file, minBytes) {
   return { path, bytes: info.size };
 }
 
-async function assertMissing(path) {
-  try {
-    await stat(path);
-    throw new Error(`${path} should not exist; background music is intentionally disabled`);
-  } catch (error) {
-    if (error?.code === "ENOENT") return { path, missing: true };
-    throw error;
+async function assertSilentTombstone(path) {
+  const info = await stat(path);
+  if (info.size <= 0) throw new Error(`${path} tombstone is empty`);
+  if (info.size > MUSIC_TOMBSTONE_MAX_BYTES) {
+    throw new Error(`${path} is ${info.size} bytes; expected a tiny silent tombstone, not background music`);
   }
+  return { path, bytes: info.size, maxBytes: MUSIC_TOMBSTONE_MAX_BYTES };
 }
 
 async function run() {
@@ -38,17 +38,18 @@ async function run() {
       files.push(await fileReport(root, file, MIN_SFX_BYTES));
     }
   }
-  const forbidden = [];
-  for (const file of FORBIDDEN_MUSIC) {
-    forbidden.push(await assertMissing(file));
+  const musicTombstones = [];
+  for (const file of MUSIC_TOMBSTONES) {
+    musicTombstones.push(await assertSilentTombstone(file));
   }
 
   const report = {
     pass: true,
     capturedAt: new Date().toISOString(),
     minSfxBytes: MIN_SFX_BYTES,
+    musicTombstoneMaxBytes: MUSIC_TOMBSTONE_MAX_BYTES,
     files,
-    forbidden,
+    musicTombstones,
   };
   await mkdir("outputs", { recursive: true });
   await writeFile(OUTPUT, JSON.stringify(report, null, 2));

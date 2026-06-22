@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 
 const OUTPUT = process.env.AA_READINESS_OUTPUT || "outputs/aa-readiness-smoke.json";
+const MUSIC_TOMBSTONE_MAX_BYTES = 20_000;
 
 const checks = [];
 
@@ -427,14 +428,18 @@ async function run() {
 
   const expectedSfx = ["pickup", "bank", "hit", "shock-pulse", "magnet-burst", "fall"];
   const sfxFiles = await Promise.all(expectedSfx.map((name) => fileExists(`public/audio/sfx/${name}.mp3`, 4_000)));
+  const publicMusicBytes = existsSync("public/audio/music.mp3") ? await size("public/audio/music.mp3") : 0;
+  const distMusicBytes = existsSync("dist/audio/music.mp3") ? await size("dist/audio/music.mp3") : 0;
   add("audio:six-shipped-sfx", sfxFiles.every((item) => item.pass), sfxFiles.map((item) => item.evidence).join("; "));
-  add("audio:sfx-only-no-music", !existsSync("public/audio/music.mp3")
-    && !existsSync("dist/audio/music.mp3")
+  add("audio:sfx-only-no-music", publicMusicBytes > 0
+    && publicMusicBytes <= MUSIC_TOMBSTONE_MAX_BYTES
+    && distMusicBytes > 0
+    && distMusicBytes <= MUSIC_TOMBSTONE_MAX_BYTES
     && !sfx.includes("music(")
     && !sfx.includes("music.mp3")
-    && assetsSmoke.includes("FORBIDDEN_MUSIC")
-    && distBudget.includes("reintroduces background music"),
-  "Background music is absent from source/dist and guarded by asset plus dist-budget smokes");
+    && assetsSmoke.includes("MUSIC_TOMBSTONE_MAX_BYTES")
+    && distBudget.includes("silent stale-cache tombstone"),
+  `Background music runtime is disabled; audio/music.mp3 is only a tiny silent tombstone (${publicMusicBytes}/${distMusicBytes} bytes) guarded by asset plus dist-budget smokes`);
   add("audio:player-sfx-volume-control", includesEvery(sfx, [
     "setVolume",
     "applyMasterGain",
@@ -745,10 +750,12 @@ async function run() {
     && typeof buildJson?.builtAt === "string",
   buildJson ? `dist/build.json ${buildJson.commit} ${buildJson.builtAt}` : "dist/build.json is missing; run npm run build first");
   const distFiles = await walk("dist", (path) => extname(path).toLowerCase() !== ".map");
+  const distMusicFiles = distFiles.filter((path) => /audio[\\/]+music\.(mp3|wav|ogg|m4a)$/i.test(path));
+  const distMusicSizes = await Promise.all(distMusicFiles.map((path) => size(path)));
   add("dist:production-output-no-music-or-devmaps", distFiles.length > 0
-    && distFiles.every((path) => !/audio[\\/]+music\.(mp3|wav|ogg|m4a)$/i.test(path))
+    && distMusicSizes.every((bytes) => bytes <= MUSIC_TOMBSTONE_MAX_BYTES)
     && !(await walk("dist", (path) => extname(path).toLowerCase() === ".map")).length,
-  `dist files scanned: ${distFiles.length}`);
+  `dist files scanned: ${distFiles.length}; music tombstone bytes: ${distMusicSizes.join(", ") || "none"}`);
 
   const testFiles = await walk("src", (path) => path.endsWith(".test.ts"));
   add("tests:focused-coverage-surface", testFiles.length >= 9
@@ -761,7 +768,7 @@ async function run() {
   add("docs:living-gap-and-asset-ledger", readinessDoc.includes("## Open Gaps")
     && (readinessDoc.includes("Public Render deployment is not current") || readinessDoc.includes("Public Render frontend deployment is not current"))
     && assetBudget.includes("Tracked total")
-    && assetBudget.includes("No background music currently ships"),
+    && assetBudget.includes("No audible background music currently ships"),
   "Launch readiness doc has open gaps and asset budget tracks spend plus no-music state");
 
   add("deploy:render-blueprint-present", includesEvery(renderYaml, [
