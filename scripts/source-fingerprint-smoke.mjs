@@ -5,6 +5,7 @@ import fingerprintModule from "./lib/source-fingerprint.cjs";
 const OUTPUT = process.env.SOURCE_FINGERPRINT_OUTPUT || "outputs/source-fingerprint-smoke.json";
 const {
   fingerprintFiles,
+  sourceFingerprintDetailsSync,
   sourceFingerprintSync,
   INCLUDED_EXTENSIONS,
   TEXT_EXTENSIONS,
@@ -33,6 +34,7 @@ function assert(condition, message) {
 async function run() {
   const files = fingerprintFiles();
   const fileSet = new Set(files);
+  const details = sourceFingerprintDetailsSync();
   const first = sourceFingerprintSync();
   const second = sourceFingerprintSync();
   const missing = requiredFiles.filter((file) => !fileSet.has(file));
@@ -47,7 +49,9 @@ async function run() {
     capturedAt: new Date().toISOString(),
     browserAutomation: false,
     sourceFingerprint: first,
+    sourceFingerprintSource: details.source,
     fileCount: files.length,
+    hashedFileCount: details.files.length,
     requiredFiles,
     binaryExtensions: [".png", ".mp3"],
   };

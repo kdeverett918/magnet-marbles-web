@@ -609,7 +609,10 @@ async function run() {
     && noBrowser.includes("web:source-fingerprint-smoke")
     && includesEvery(sourceFingerprint, [
     "sourceFingerprintSync",
+    "sourceFingerprintDetailsSync",
     "createHash",
+    "gitFingerprintFiles",
+    "git-tree",
     "INCLUDED_DIRS",
     "\"scripts\"",
     "server/src",
@@ -622,22 +625,30 @@ async function run() {
     "public/audio/sfx/pickup.mp3",
     "public/icons/icon-512.png",
     "public/social-card.png",
+    "sourceFingerprintSource",
+    "hashedFileCount",
     "source fingerprint is not deterministic",
   ]) && includesEvery(viteConfig, [
-    "sourceFingerprintSync",
+    "sourceFingerprintDetailsSync",
     "MM_SOURCE_FINGERPRINT",
+    "sourceFingerprintSource",
+    "sourceFingerprintFileCount",
     "sourceFingerprint",
   ]) && !viteConfig.includes("process.env.SOURCE_FINGERPRINT")
     && includesEvery(serverIndex, [
     "__MM_SERVER_BUILD_INFO__",
     "MM_SOURCE_FINGERPRINT",
+    "sourceFingerprintSource",
+    "sourceFingerprintFileCount",
     "sourceFingerprint",
   ]) && !serverIndex.includes("process.env.SOURCE_FINGERPRINT")
     && serverPackageJson.scripts?.build === "node scripts/build.mjs"
     && includesEvery(serverBuild, [
-      "sourceFingerprintSync",
+      "sourceFingerprintDetailsSync",
       "__MM_SERVER_BUILD_INFO__",
       "MM_SOURCE_FINGERPRINT",
+      "sourceFingerprintSource",
+      "sourceFingerprintFileCount",
       "sourceFingerprint",
     ])
     && !serverBuild.includes("process.env.SOURCE_FINGERPRINT")

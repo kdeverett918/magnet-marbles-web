@@ -1,4 +1,5 @@
 const { createHash } = require("node:crypto");
+const { spawnSync } = require("node:child_process");
 const { existsSync, readdirSync, readFileSync } = require("node:fs");
 const { join, relative, resolve } = require("node:path");
 
@@ -76,6 +77,13 @@ function extensionOf(path) {
   return dot > slash ? path.slice(dot).toLowerCase() : "";
 }
 
+function isIncludedPath(rel) {
+  if (INCLUDED_FILES.includes(rel)) return true;
+  if (!INCLUDED_EXTENSIONS.has(extensionOf(rel))) return false;
+  if (rel.split("/").some((part) => EXCLUDED_DIR_NAMES.has(part))) return false;
+  return INCLUDED_DIRS.some((dir) => rel === dir || rel.startsWith(`${dir}/`));
+}
+
 function walk(root, dir, files) {
   if (!existsSync(dir)) return;
   const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => comparePath(a.name, b.name));
@@ -101,15 +109,60 @@ function fingerprintFiles(root = findRepoRoot()) {
   return [...new Set(files)].sort(comparePath);
 }
 
-function sourceFingerprintSync(root = findRepoRoot()) {
+function git(root, args, options = {}) {
+  return spawnSync("git", args, {
+    cwd: root,
+    encoding: options.encoding ?? "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    windowsHide: true,
+    maxBuffer: options.maxBuffer ?? 64 * 1024 * 1024,
+  });
+}
+
+function gitAvailable(root) {
+  return git(root, ["rev-parse", "--is-inside-work-tree"]).status === 0;
+}
+
+function gitTreeClean(root) {
+  const result = git(root, ["status", "--porcelain", "--untracked-files=all"]);
+  return result.status === 0 && result.stdout.trim().length === 0;
+}
+
+function shouldUseGitTree(root) {
+  if (!gitAvailable(root)) return false;
+  if (process.env.MM_SOURCE_FINGERPRINT_MODE === "working-tree") return false;
+  if (process.env.MM_SOURCE_FINGERPRINT_MODE === "git-tree") return true;
+  if (process.env.RENDER) return true;
+  return gitTreeClean(root);
+}
+
+function gitFingerprintFiles(root = findRepoRoot()) {
+  if (!gitAvailable(root)) return [];
+  const result = git(root, ["ls-tree", "-r", "--name-only", "HEAD"]);
+  if (result.status !== 0) return [];
+  return result.stdout
+    .split(/\r?\n/)
+    .map((file) => file.trim())
+    .filter(Boolean)
+    .filter(isIncludedPath)
+    .sort(comparePath);
+}
+
+function normalizePayload(file, raw) {
+  const ext = extensionOf(file);
+  return TEXT_EXTENSIONS.has(ext) ? Buffer.from(raw.toString("utf8").replace(/\r\n/g, "\n"), "utf8") : raw;
+}
+
+function gitBlob(root, file) {
+  const result = git(root, ["show", `HEAD:${file}`], { encoding: "buffer" });
+  return result.status === 0 ? result.stdout : null;
+}
+
+function hashFiles(root, files, readPayload) {
   const repoRoot = resolve(root);
   const hash = createHash("sha256");
-  const files = fingerprintFiles(repoRoot);
   for (const file of files) {
-    const path = join(repoRoot, file);
-    const raw = readFileSync(path);
-    const ext = extensionOf(file);
-    const payload = TEXT_EXTENSIONS.has(ext) ? Buffer.from(raw.toString("utf8").replace(/\r\n/g, "\n"), "utf8") : raw;
+    const payload = normalizePayload(file, readPayload(repoRoot, file));
     hash.update(file);
     hash.update("\0");
     hash.update(String(payload.length));
@@ -120,12 +173,33 @@ function sourceFingerprintSync(root = findRepoRoot()) {
   return hash.digest("hex").slice(0, 16);
 }
 
+function sourceFingerprintDetailsSync(root = findRepoRoot()) {
+  const repoRoot = resolve(root);
+  const useGitTree = shouldUseGitTree(repoRoot);
+  const files = useGitTree ? gitFingerprintFiles(repoRoot) : fingerprintFiles(repoRoot);
+  const source = useGitTree ? "git-tree" : "working-tree";
+  const fingerprint = hashFiles(repoRoot, files, (base, file) => {
+    if (useGitTree) {
+      const blob = gitBlob(base, file);
+      if (blob) return blob;
+    }
+    return readFileSync(join(base, file));
+  });
+  return { fingerprint, files, source };
+}
+
+function sourceFingerprintSync(root = findRepoRoot()) {
+  return sourceFingerprintDetailsSync(root).fingerprint;
+}
+
 module.exports = {
+  comparePath,
   fingerprintFiles,
   findRepoRoot,
+  gitFingerprintFiles,
+  sourceFingerprintDetailsSync,
   sourceFingerprintSync,
   INCLUDED_DIRS,
   INCLUDED_EXTENSIONS,
   TEXT_EXTENSIONS,
-  comparePath,
 };
