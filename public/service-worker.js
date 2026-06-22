@@ -1,5 +1,8 @@
 const CACHE_PREFIX = "magnet-marbles-shell";
-const CACHE_NAME = `${CACHE_PREFIX}-v1`;
+const CACHE_NAME = `${CACHE_PREFIX}-v2`;
+const REMOVED_AUDIO_PATHS = new Set([
+  "/audio/music.mp3",
+]);
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -13,7 +16,6 @@ const APP_SHELL = [
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/icon-maskable-512.png",
-  "./audio/music.mp3",
   "./audio/sfx/bank.mp3",
   "./audio/sfx/fall.mp3",
   "./audio/sfx/hit.mp3",
@@ -38,9 +40,22 @@ self.addEventListener("activate", (event) => {
           .filter((name) => name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME)
           .map((name) => caches.delete(name))
       ))
+      .then(() => purgeRemovedAssets())
       .then(() => self.clients.claim())
   );
 });
+
+async function purgeRemovedAssets() {
+  const names = await caches.keys();
+  await Promise.all(names.map(async (name) => {
+    const cache = await caches.open(name);
+    const requests = await cache.keys();
+    await Promise.all(requests.map((request) => {
+      const url = new URL(request.url);
+      return REMOVED_AUDIO_PATHS.has(url.pathname) ? cache.delete(request) : Promise.resolve(false);
+    }));
+  }));
+}
 
 function sameOrigin(request) {
   return new URL(request.url).origin === self.location.origin;
@@ -88,6 +103,10 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET" || !sameOrigin(request)) return;
 
   const url = new URL(request.url);
+  if (REMOVED_AUDIO_PATHS.has(url.pathname)) {
+    event.respondWith(removedAudioResponse());
+    return;
+  }
   if (isDocumentRequest(request, url)) {
     event.respondWith(networkFirst(request));
     return;
@@ -96,3 +115,13 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(cacheFirst(request));
   }
 });
+
+function removedAudioResponse() {
+  return new Response("", {
+    status: 410,
+    statusText: "Gone",
+    headers: {
+      "cache-control": "no-store",
+    },
+  });
+}

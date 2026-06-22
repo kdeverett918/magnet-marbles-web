@@ -3,7 +3,6 @@ import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 
 const OUTPUT = process.env.AA_READINESS_OUTPUT || "outputs/aa-readiness-smoke.json";
-const MUSIC_TOMBSTONE_MAX_BYTES = 20_000;
 
 const checks = [];
 
@@ -431,18 +430,16 @@ async function run() {
 
   const expectedSfx = ["pickup", "bank", "hit", "shock-pulse", "magnet-burst", "fall"];
   const sfxFiles = await Promise.all(expectedSfx.map((name) => fileExists(`public/audio/sfx/${name}.mp3`, 4_000)));
-  const publicMusicBytes = existsSync("public/audio/music.mp3") ? await size("public/audio/music.mp3") : 0;
-  const distMusicBytes = existsSync("dist/audio/music.mp3") ? await size("dist/audio/music.mp3") : 0;
+  const publicMusicMissing = !existsSync("public/audio/music.mp3");
+  const distMusicMissing = !existsSync("dist/audio/music.mp3");
   add("audio:six-shipped-sfx", sfxFiles.every((item) => item.pass), sfxFiles.map((item) => item.evidence).join("; "));
-  add("audio:sfx-only-no-music", publicMusicBytes > 0
-    && publicMusicBytes <= MUSIC_TOMBSTONE_MAX_BYTES
-    && distMusicBytes > 0
-    && distMusicBytes <= MUSIC_TOMBSTONE_MAX_BYTES
+  add("audio:sfx-only-no-music", publicMusicMissing
+    && distMusicMissing
     && !sfx.includes("music(")
     && !sfx.includes("music.mp3")
-    && assetsSmoke.includes("MUSIC_TOMBSTONE_MAX_BYTES")
-    && distBudget.includes("silent stale-cache tombstone"),
-  `Background music runtime is disabled; audio/music.mp3 is only a tiny silent tombstone (${publicMusicBytes}/${distMusicBytes} bytes) guarded by asset plus dist-budget smokes`);
+    && assetsSmoke.includes("assertNoMusicFile")
+    && distBudget.includes("background music is disabled"),
+  `Background music runtime is disabled and audio/music.mp3 is absent from public/dist (${publicMusicMissing}/${distMusicMissing})`);
   add("audio:player-sfx-volume-control", includesEvery(sfx, [
     "setVolume",
     "applyMasterGain",
@@ -494,8 +491,11 @@ async function run() {
   ]) && includesEvery(serviceWorker, [
     "CACHE_PREFIX",
     "APP_SHELL",
+    "REMOVED_AUDIO_PATHS",
+    "purgeRemovedAssets",
+    "removedAudioResponse",
+    "status: 410",
     "./build.json",
-    "./audio/music.mp3",
     "networkFirst",
     "cacheFirst",
     "sameOrigin(request)",
@@ -505,7 +505,7 @@ async function run() {
     "networkFirst",
     "cacheFirst",
   ]),
-  "PWA service worker skips local development hosts, caches the app shell/SFX, keeps build metadata network-first, and is enforced by metadata smoke");
+  "PWA service worker skips local development hosts, caches the app shell/SFX, purges removed music, keeps build metadata network-first, and is enforced by metadata smoke");
 
   const distJsForServiceWorker = await Promise.all(
     (await walk("dist", (path) => extname(path).toLowerCase() === ".js"))
@@ -797,9 +797,9 @@ async function run() {
   const distMusicFiles = distFiles.filter((path) => /audio[\\/]+music\.(mp3|wav|ogg|m4a)$/i.test(path));
   const distMusicSizes = await Promise.all(distMusicFiles.map((path) => size(path)));
   add("dist:production-output-no-music-or-devmaps", distFiles.length > 0
-    && distMusicSizes.every((bytes) => bytes <= MUSIC_TOMBSTONE_MAX_BYTES)
+    && distMusicFiles.length === 0
     && !(await walk("dist", (path) => extname(path).toLowerCase() === ".map")).length,
-  `dist files scanned: ${distFiles.length}; music tombstone bytes: ${distMusicSizes.join(", ") || "none"}`);
+  `dist files scanned: ${distFiles.length}; music files: ${distMusicFiles.length}; music bytes: ${distMusicSizes.join(", ") || "none"}`);
 
   const testFiles = await walk("src", (path) => path.endsWith(".test.ts"));
   add("tests:focused-coverage-surface", testFiles.length >= 9

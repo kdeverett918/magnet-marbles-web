@@ -10,7 +10,6 @@ const EXPECT_COMMIT = process.env.LIVE_VERSION_EXPECT_COMMIT || commandOutput("g
 const EXPECT_SOURCE_FINGERPRINT = process.env.LIVE_VERSION_EXPECT_SOURCE_FINGERPRINT || fingerprintModule.sourceFingerprintSync();
 const TIMEOUT_MS = Number(process.env.LIVE_VERSION_TIMEOUT_MS || 60_000);
 const REQUIRE_MATCH = process.env.LIVE_VERSION_REQUIRE_MATCH !== "0";
-const MUSIC_TOMBSTONE_MAX_BYTES = Number(process.env.LIVE_VERSION_MUSIC_TOMBSTONE_MAX_BYTES || 20_000);
 
 function commandOutput(command, args, fallback) {
   try {
@@ -138,26 +137,20 @@ function summarizeBuild(name, result, build) {
 }
 
 function summarizeForbiddenMusic(result) {
-  const missing = result.status === 404 || result.status === 410;
-  const contentLength = Number(result.contentLength);
-  const tinyTombstone = result.status === 200
-    && Number.isFinite(contentLength)
-    && contentLength > 0
-    && contentLength <= MUSIC_TOMBSTONE_MAX_BYTES;
+  const missingOrGone = result.status === 404 || result.status === 410;
   return {
     name: "live:forbidden-background-music",
-    pass: missing || tinyTombstone,
+    pass: missingOrGone,
     url: result.url,
     status: result.status,
     elapsedMs: result.elapsedMs,
     contentType: result.contentType,
     contentLength: result.contentLength,
-    maxTombstoneBytes: MUSIC_TOMBSTONE_MAX_BYTES,
     error: result.error
       ? `could not verify removed music asset: ${result.error}`
-      : missing || tinyTombstone
+      : missingOrGone
       ? undefined
-      : `loud background music is still served at ${result.url}; expected missing or tiny silent tombstone, got status ${result.status} and ${result.contentLength} bytes`,
+      : `background music URL is still served at ${result.url}; expected 404/410, got status ${result.status} and ${result.contentLength} bytes`,
   };
 }
 

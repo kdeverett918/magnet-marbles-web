@@ -4,7 +4,6 @@ import { extname, join, relative } from "node:path";
 
 const DIST_ROOT = process.env.DIST_BUDGET_ROOT || "dist";
 const OUTPUT = process.env.DIST_BUDGET_OUTPUT || "outputs/dist-budget-smoke.json";
-const MUSIC_TOMBSTONE_MAX_BYTES = Number(process.env.DIST_BUDGET_MUSIC_TOMBSTONE_MAX_BYTES || 20_000);
 
 const LIMITS = {
   maxTotalBytes: Number(process.env.DIST_BUDGET_MAX_TOTAL_BYTES || 3_500_000),
@@ -81,8 +80,8 @@ async function run() {
     const asset = { path: rel, kind, bytes: info.size };
 
     if (rel.endsWith(".map")) throw new Error(`${rel} should not ship in production dist`);
-    if (/audio\/music\.(mp3|wav|ogg|m4a)$/i.test(rel) && info.size > MUSIC_TOMBSTONE_MAX_BYTES) {
-      throw new Error(`${rel} is too large for a silent stale-cache tombstone (${info.size} > ${MUSIC_TOMBSTONE_MAX_BYTES})`);
+    if (/audio\/music\.(mp3|wav|ogg|m4a)$/i.test(rel)) {
+      throw new Error(`${rel} must not ship; background music is disabled`);
     }
 
     summary.totalBytes += info.size;
