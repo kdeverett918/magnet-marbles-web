@@ -18,19 +18,21 @@ import {
 import { clamp, dist, dist2, len, lerp, moveToward, mulberry32 } from "./mathx";
 
 const ALL_POWERUPS: PowerupType[] = [
-  "superMagnet",
-  "doubleScore",
-  "plusFive",
-  "turbo",
-  "disableMagnet",
-  "paint",
+  "magnetBurst",
+  "shockPulse",
+  "heavyCore",
 ];
+const TUTORIAL_ASSIST_SECONDS = 45;
+const TUTORIAL_BOT_SCORE_CAP = 8;
+const TUTORIAL_BOT_SPEED_MULT = 0.62;
+const TUTORIAL_BOT_BANK_MULT = 0.35;
 
 export interface WorldOptions {
   mode: ModeDef;
   humans: number; // usually 1
   totalPlayers: number; // 2..4
   seed?: number;
+  tutorialAssist?: boolean;
 }
 
 /**
@@ -53,6 +55,8 @@ export class World {
 
   phase: RoundPhase = "menu";
   humanId = 0; // which slot the local human controls (0 for single-player)
+  tutorialAssist = false;
+  humanBankedThisMatch = false;
   round = 1;
   roundTime = 0; // seconds remaining
   introCountdown = 0;
@@ -66,10 +70,12 @@ export class World {
   private nextPickupId = 1;
   private accumulator = 0;
   private bankDrain: number[] = []; // fractional bank accumulator per player
+  private kingScoreMeter = 0;
 
   constructor(opts: WorldOptions) {
     this.mode = opts.mode;
     this.humans = opts.humans;
+    this.tutorialAssist = !!opts.tutorialAssist;
     this.rng = mulberry32(opts.seed ?? 1337);
     this.setupPlayers(opts.totalPlayers);
   }
@@ -88,12 +94,14 @@ export class World {
         name: PLAYER_NAMES[i],
         colorHex: PLAYER_COLORS[i],
         colorIndex: i,
+        teamId: this.teamForSlot(i),
         pos: { x: 0, z: 0 },
         vel: { x: 0, z: 0 },
         y: 0,
         vy: 0,
         radius: CONFIG.player.radius,
         score: 0,
+        lives: this.mode.lives ?? 0,
         alive: true,
         respawnTimer: 0,
         moveX: 0,
@@ -121,6 +129,7 @@ export class World {
       const gr = CONFIG.tableRadius - 2.1;
       this.goals.push({
         ownerId: i,
+        teamId: this.teamForSlot(i),
         colorHex: PLAYER_COLORS[i],
         angle,
         pos: { x: Math.cos(angle) * gr, z: Math.sin(angle) * gr },
@@ -130,9 +139,14 @@ export class World {
     }
   }
 
+  private teamForSlot(slot: number): number {
+    return this.mode.kind === "team-bank" ? slot % 2 : slot;
+  }
+
   // ---------------------------------------------------------------- match flow
   startMatch() {
     this.round = 1;
+    this.humanBankedThisMatch = false;
     for (const p of this.players) p.score = 0;
     this.winnerId = -1;
     this.startRound();
@@ -140,6 +154,7 @@ export class World {
 
   startRound() {
     this.suddenDeath = false;
+    this.kingScoreMeter = 0;
     this.roundTime = this.mode.duration;
     this.introCountdown = 3.2;
     this.phase = "intro";
@@ -159,6 +174,7 @@ export class World {
       p.vel = { x: 0, z: 0 };
       p.y = 0;
       p.vy = 0;
+      p.lives = this.mode.lives ?? 0;
       p.alive = true;
       p.respawnTimer = 0;
       p.cluster = [];
@@ -253,7 +269,7 @@ export class World {
         });
       }
     }
-    if (this.round >= 3 || this.mode.id === "blitz") {
+    if (this.round >= 3 || this.mode.kind === "battle" || this.mode.kind === "survival") {
       // blue-arrow auto-goal rings feeding the two "lowest" goals dynamically
       const n = this.players.length;
       for (let i = 0; i < Math.min(2, n); i++) {
@@ -286,8 +302,12 @@ export class World {
     p.moveX = input.moveX;
     p.moveZ = input.moveZ;
     p.wantMagnet = input.magnet;
-    p.wantDash = input.dash;
-    p.wantActivate = input.activate;
+    // Edge-triggered inputs are accumulated (latched) until a fixed step
+    // consumes them. The render loop runs faster than the 60Hz sim, so a dash /
+    // activate press can land on a frame where no step runs — without latching
+    // it would be overwritten and lost before the sim ever sees it.
+    p.wantDash = p.wantDash || !!input.dash;
+    p.wantActivate = p.wantActivate || !!input.activate;
   }
 
   /** Advance the match by real elapsed time, running fixed sub-steps. */
@@ -338,6 +358,7 @@ export class World {
     this.pickupStep(dt);
     this.obstacleStep(dt);
     this.respawnStep(dt);
+    this.modeRuleStep(dt);
   }
 
   // ---------------------------------------------------------------- players
@@ -351,6 +372,7 @@ export class World {
 
   private updatePlayer(p: Player, dt: number) {
     if (!p.alive) {
+      if (this.mode.kind === "survival" && p.lives <= 0) return;
       p.respawnTimer -= dt;
       if (p.respawnTimer <= 0) this.respawnPlayer(p);
       return;
@@ -362,30 +384,37 @@ export class World {
       if (!p.alive) return;
     }
 
-    // activation of held powerup
-    if (p.wantActivate && p.heldPowerup) {
-      this.activatePowerup(p, p.heldPowerup);
-      p.heldPowerup = null;
+    // activation of held powerup (consume the latched press either way)
+    if (p.wantActivate) {
+      if (p.heldPowerup) {
+        this.activatePowerup(p, p.heldPowerup);
+        p.heldPowerup = null;
+      }
       p.wantActivate = false;
     }
 
     // magnet state
     p.magnetActive = p.wantMagnet && this.magnetUsable(p);
 
-    // dash
+    // dash (consume the latched press either way)
     if (p.dashCooldown > 0) p.dashCooldown -= dt;
     if (p.dashTimer > 0) p.dashTimer -= dt;
-    if (p.wantDash && p.dashCooldown <= 0 && p.dashTimer <= 0) {
-      p.dashTimer = CONFIG.player.dashDuration;
-      p.dashCooldown = CONFIG.player.dashCooldown;
+    if (p.wantDash) {
+      if (p.dashCooldown <= 0 && p.dashTimer <= 0) {
+        p.dashTimer = CONFIG.player.dashDuration;
+        p.dashCooldown = CONFIG.player.dashCooldown;
+      }
+      p.wantDash = false;
     }
 
     // desired velocity from input
     let speed: number = CONFIG.player.moveSpeed;
     if (this.hasPU(p, "turbo")) speed *= CONFIG.powerups.turboSpeedMult;
     if (this.hasPU(p, "superMagnet")) speed += CONFIG.powerups.superMagnetSpeedBonus;
+    if (this.hasPU(p, "heavyCore")) speed *= CONFIG.combat.heavyCoreSpeedMult;
     const dashing = p.dashTimer > 0;
     if (dashing) speed = CONFIG.player.dashSpeed;
+    if (p.isBot && this.tutorialBotAssistActive()) speed *= TUTORIAL_BOT_SPEED_MULT;
 
     const mag = Math.hypot(p.moveX, p.moveZ);
     let tvx = 0;
@@ -425,9 +454,13 @@ export class World {
   private magnetStep(dt: number) {
     for (const p of this.players) {
       if (!p.alive || !p.magnetActive) continue;
-      const radius = this.hasPU(p, "superMagnet")
+      const burst = this.hasPU(p, "magnetBurst");
+      const radius = burst
+        ? CONFIG.magnet.burstRadius
+        : this.hasPU(p, "superMagnet")
         ? CONFIG.magnet.superRadius
         : CONFIG.magnet.radius;
+      const forceMult = burst ? CONFIG.magnet.burstForceMult : 1;
       const r2 = radius * radius;
       const capR2 = CONFIG.magnet.captureRadius * CONFIG.magnet.captureRadius;
       const full = p.cluster.length >= CONFIG.magnet.clusterCap;
@@ -441,7 +474,7 @@ export class World {
         }
         const d = Math.max(Math.sqrt(d2), CONFIG.magnet.minDistance);
         const fall = 1 - (d - CONFIG.magnet.minDistance) / radius;
-        const f = (CONFIG.magnet.force * Math.max(fall, 0)) / d;
+        const f = (CONFIG.magnet.force * forceMult * Math.max(fall, 0)) / d;
         m.vel.x += (p.pos.x - m.pos.x) * f * dt;
         m.vel.z += (p.pos.z - m.pos.z) * f * dt;
       }
@@ -488,13 +521,18 @@ export class World {
 
   private bankStep(p: Player, dt: number, byId: Map<number, Marble>) {
     if (!p.alive || p.cluster.length === 0) return;
-    const goal = this.goals[p.id];
-    if (this.time < goal.blockedUntil) return; // goal currently blocked
-    if (dist(p.pos, goal.pos) > goal.radius) {
+    const goal = this.bankGoalForPlayer(p);
+    if (!goal) {
       this.bankDrain[p.id] = 0;
       return;
     }
-    this.bankDrain[p.id] += CONFIG.bank.drainPerSec * dt;
+    const botAssist = p.isBot && this.tutorialBotAssistActive();
+    if (botAssist && p.score >= TUTORIAL_BOT_SCORE_CAP) {
+      this.bankDrain[p.id] = 0;
+      return;
+    }
+    const bankRate = CONFIG.bank.drainPerSec * (botAssist ? TUTORIAL_BOT_BANK_MULT : 1);
+    this.bankDrain[p.id] += bankRate * dt;
     while (this.bankDrain[p.id] >= 1 && p.cluster.length > 0) {
       this.bankDrain[p.id] -= 1;
       const id = p.cluster.shift()!;
@@ -503,7 +541,13 @@ export class World {
       let pts = m.value;
       if (m.painted && m.paintedBy === p.id) pts *= CONFIG.bank.paintBonus;
       if (this.hasPU(p, "doubleScore")) pts *= 2;
-      p.score += pts;
+      if (botAssist && p.score + pts > TUTORIAL_BOT_SCORE_CAP) {
+        p.cluster.unshift(id);
+        this.bankDrain[p.id] = 0;
+        return;
+      }
+      this.awardScore(p, pts);
+      if (p.id === this.humanId) this.humanBankedThisMatch = true;
       p.recentlyBanked++;
       this.fx.push({
         kind: "bank",
@@ -514,6 +558,36 @@ export class World {
       });
       this.recycleMarble(m);
     }
+  }
+
+  private bankGoalForPlayer(p: Player): Goal | null {
+    let best: Goal | null = null;
+    let bestDistance = Infinity;
+    for (const goal of this.goals) {
+      if (this.mode.kind === "team-bank") {
+        if (goal.teamId !== p.teamId) continue;
+      } else if (goal.ownerId !== p.id) {
+        continue;
+      }
+      if (this.time < goal.blockedUntil) continue;
+      const d = dist(p.pos, goal.pos);
+      if (d <= goal.radius && d < bestDistance) {
+        best = goal;
+        bestDistance = d;
+      }
+    }
+    return best;
+  }
+
+  private awardScore(p: Player, points: number) {
+    if (points <= 0) return;
+    if (this.mode.kind === "team-bank") {
+      for (const teammate of this.players) {
+        if (teammate.teamId === p.teamId) teammate.score += points;
+      }
+      return;
+    }
+    p.score += points;
   }
 
   // ---------------------------------------------------------------- free marbles
@@ -553,12 +627,16 @@ export class World {
     for (let i = 0; i < ps.length; i++) {
       const p = ps[i];
       for (const m of free) {
-        this.resolveCircles(p, m, CONFIG.player.mass, CONFIG.marble.mass, CONFIG.marble.restitution);
+        this.resolveCircles(p, m, this.playerMass(p), CONFIG.marble.mass, CONFIG.marble.restitution);
       }
       for (let j = i + 1; j < ps.length; j++) {
         this.resolvePlayers(p, ps[j]);
       }
     }
+  }
+
+  private playerMass(p: Player): number {
+    return CONFIG.player.mass * (this.hasPU(p, "heavyCore") ? CONFIG.combat.heavyCoreMassMult : 1);
   }
 
   private resolveCircles(
@@ -605,14 +683,15 @@ export class World {
     const nx = dx / d;
     const nz = dz / d;
     const relSpeed = Math.hypot(b.vel.x - a.vel.x, b.vel.z - a.vel.z);
+    const aSpeedBeforeImpact = Math.hypot(a.vel.x, a.vel.z);
+    const bSpeedBeforeImpact = Math.hypot(b.vel.x, b.vel.z);
     // physics push
-    this.resolveCircles(a, b, CONFIG.player.mass, CONFIG.player.mass, 0.4 + CONFIG.combat.pushImpulse * 0.2);
+    this.resolveCircles(a, b, this.playerMass(a), this.playerMass(b), 0.4 + CONFIG.combat.pushImpulse * 0.2);
 
     if (relSpeed < CONFIG.combat.bumpSpeed) return;
-    // determine aggressor = faster mover
-    const aSpeed = Math.hypot(a.vel.x, a.vel.z);
-    const bSpeed = Math.hypot(b.vel.x, b.vel.z);
-    const attacker = aSpeed >= bSpeed ? a : b;
+    // determine aggressor from pre-impact velocity; collision response can
+    // transfer speed to the victim before steal logic runs.
+    const attacker = aSpeedBeforeImpact >= bSpeedBeforeImpact ? a : b;
     const victim = attacker === a ? b : a;
     const cx = (a.pos.x + b.pos.x) / 2;
     const cz = (a.pos.z + b.pos.z) / 2;
@@ -624,6 +703,10 @@ export class World {
       // shove victim outward hard; rimCheck will send them off
       victim.vel.x += nx * (attacker === a ? 1 : -1) * relSpeed * 0.6;
       victim.vel.z += nz * (attacker === a ? 1 : -1) * relSpeed * 0.6;
+      if (this.mode.kind === "battle") {
+        this.awardScore(attacker, CONFIG.combat.battleKnockoffBonus);
+        this.fx.push({ kind: "knockoff", x: victim.pos.x, z: victim.pos.z });
+      }
       return; // actual knockoff resolved when they cross the rim
     }
 
@@ -632,11 +715,13 @@ export class World {
       attacker.lastBumpFx = this.time;
       const steal = Math.max(1, Math.floor(victim.cluster.length * CONFIG.combat.stealFraction));
       const byId = this.marbleMap();
+      let stolen = 0;
       for (let k = 0; k < steal; k++) {
         const id = victim.cluster.pop();
         if (id === undefined) break;
         const m = byId.get(id);
         if (!m) continue;
+        stolen++;
         if (attacker.cluster.length < CONFIG.magnet.clusterCap) {
           m.carrier = attacker.id;
           attacker.cluster.push(id);
@@ -650,6 +735,7 @@ export class World {
           m.vel.z = Math.sin(ang) * 4;
         }
       }
+      if (this.mode.kind === "battle") this.awardScore(attacker, stolen * CONFIG.combat.battleStealScore);
       this.fx.push({ kind: "steal", x: victim.pos.x, z: victim.pos.z, color: attacker.colorHex });
     }
   }
@@ -700,7 +786,16 @@ export class World {
     if (body.y <= CONFIG.fallLimit) {
       if ("cluster" in body) {
         body.alive = false;
-        body.respawnTimer = CONFIG.player.respawnTime;
+        if (this.mode.kind === "survival") {
+          body.lives = Math.max(0, body.lives - 1);
+          body.respawnTimer = body.lives > 0 ? CONFIG.player.respawnTime : Number.POSITIVE_INFINITY;
+          if (body.lives <= 0) {
+            body.vel = { x: 0, z: 0 };
+            this.fx.push({ kind: "knockoff", x: body.pos.x, z: body.pos.z });
+          }
+        } else {
+          body.respawnTimer = CONFIG.player.respawnTime;
+        }
         body.y = 0;
       } else {
         this.recycleMarble(body as Marble);
@@ -710,13 +805,21 @@ export class World {
 
   private dropCluster(p: Player, scatter: boolean) {
     if (p.cluster.length === 0) return;
+    this.dropSomeCluster(p, p.cluster.length, scatter);
+  }
+
+  private dropSomeCluster(p: Player, count: number, scatter: boolean): number {
+    if (p.cluster.length === 0 || count <= 0) return 0;
     const byId = this.marbleMap();
-    for (const id of p.cluster) {
+    let dropped = 0;
+    const ids = p.cluster.splice(Math.max(0, p.cluster.length - count), count);
+    for (const id of ids) {
       const m = byId.get(id);
       if (!m) continue;
       m.state = "free";
       m.carrier = -1;
       m.y = 0;
+      dropped++;
       if (scatter) {
         const ang = this.rng() * Math.PI * 2;
         const spd = 3 + this.rng() * 4;
@@ -726,7 +829,7 @@ export class World {
         m.vel.z = Math.sin(ang) * spd;
       }
     }
-    p.cluster = [];
+    return dropped;
   }
 
   // ---------------------------------------------------------------- powerups
@@ -758,10 +861,42 @@ export class World {
 
   private activatePowerup(p: Player, type: PowerupType) {
     const meta = POWERUP_META[type];
+    if (type === "magnetBurst" || type === "heavyCore") {
+      const dur = CONFIG.powerups.durations[type] ?? 3;
+      p.activeUntil[type] = this.time + dur;
+      this.fx.push({ kind: "powerup", x: p.pos.x, z: p.pos.z, type });
+      return;
+    }
+    if (type === "shockPulse") {
+      let hit = false;
+      const r2 = CONFIG.combat.shockPulseRadius * CONFIG.combat.shockPulseRadius;
+      for (const other of this.players) {
+        if (other.id === p.id || !other.alive || other.y < 0) continue;
+        const dx = other.pos.x - p.pos.x;
+        const dz = other.pos.z - p.pos.z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 > r2) continue;
+        hit = true;
+        const d = Math.max(Math.sqrt(d2), 0.3);
+        other.vel.x += (dx / d) * CONFIG.combat.shockPulseImpulse;
+        other.vel.z += (dz / d) * CONFIG.combat.shockPulseImpulse;
+        const drop = Math.max(1, Math.ceil(other.cluster.length * CONFIG.combat.shockPulseDropFraction));
+        const dropped = this.dropSomeCluster(other, drop, true);
+        if (this.mode.kind === "battle" && dropped > 0) this.awardScore(p, dropped);
+        if (dropped > 0) this.fx.push({ kind: "steal", x: other.pos.x, z: other.pos.z, color: p.colorHex });
+      }
+      if (hit) this.fx.push({ kind: "hit", x: p.pos.x, z: p.pos.z });
+      else this.fx.push({ kind: "powerup", x: p.pos.x, z: p.pos.z, type });
+      return;
+    }
     if (type === "plusFive") {
-      let pts = CONFIG.powerups.plusFive;
+      let pts: number = CONFIG.powerups.plusFive;
       if (this.hasPU(p, "doubleScore")) pts *= 2;
-      p.score += pts;
+      if (p.isBot && this.tutorialBotAssistActive()) {
+        pts = Math.min(pts, Math.max(0, TUTORIAL_BOT_SCORE_CAP - p.score));
+        if (pts <= 0) return;
+      }
+      this.awardScore(p, pts);
       this.fx.push({ kind: "bank", x: p.pos.x, z: p.pos.z, color: p.colorHex, big: true });
       return;
     }
@@ -853,6 +988,45 @@ export class World {
     }
   }
 
+  private modeRuleStep(dt: number) {
+    if (this.mode.kind === "king-magnet") {
+      this.kingScoreMeter += dt;
+      while (this.kingScoreMeter >= CONFIG.king.scoreEvery) {
+        this.kingScoreMeter -= CONFIG.king.scoreEvery;
+        const leader = this.kingLeader();
+        if (leader) {
+          this.awardScore(leader, CONFIG.king.scoreAmount);
+          this.fx.push({ kind: "bank", x: leader.pos.x, z: leader.pos.z, color: leader.colorHex, big: false });
+        }
+      }
+    }
+
+    if (this.mode.kind === "survival") {
+      const active = this.players.filter((p) => p.lives > 0);
+      if (active.length <= 1) {
+        if (active[0]) this.awardScore(active[0], 5);
+        this.endRound();
+      }
+    }
+  }
+
+  private kingLeader(): Player | null {
+    let best: Player | null = null;
+    let bestCluster = CONFIG.king.minCluster - 1;
+    let tied = false;
+    for (const p of this.players) {
+      if (!p.alive || p.cluster.length < CONFIG.king.minCluster) continue;
+      if (p.cluster.length > bestCluster) {
+        best = p;
+        bestCluster = p.cluster.length;
+        tied = false;
+      } else if (p.cluster.length === bestCluster) {
+        tied = true;
+      }
+    }
+    return tied ? null : best;
+  }
+
   private recycleMarble(m: Marble) {
     m.state = "dead";
     m.carrier = -1;
@@ -872,12 +1046,13 @@ export class World {
   // ---------------------------------------------------------------- bots (FSM)
   private botThink(p: Player, dt: number) {
     p.botTimer -= dt;
-    const skill = CONFIG.bot.skill;
+    const assist = this.tutorialBotAssistActive();
+    const skill = CONFIG.bot.skill * (assist ? 0.55 : 1);
     const goal = this.goals[p.id];
 
     // periodic high-level decision
     if (p.botTimer <= 0) {
-      p.botTimer = CONFIG.bot.retargetEvery * (0.7 + this.rng() * 0.6);
+      p.botTimer = CONFIG.bot.retargetEvery * (assist ? 1.45 : 1) * (0.7 + this.rng() * 0.6);
       const timeLeft = this.roundTime;
       if (p.cluster.length >= CONFIG.bot.bankWhenCluster || timeLeft < CONFIG.bot.bankWhenTimeLeft) {
         p.botState = "bank";
@@ -965,11 +1140,19 @@ export class World {
     this.setInput(p.id, { moveX: dx, moveZ: dz, magnet, dash, activate: false });
   }
 
+  private tutorialBotAssistActive(): boolean {
+    if (!this.tutorialAssist || this.humanBankedThisMatch || this.round !== 1 || this.phase !== "playing") return false;
+    return this.mode.duration - this.roundTime <= TUTORIAL_ASSIST_SECONDS;
+  }
+
   private botMaybeActivate(p: Player) {
     if (!p.heldPowerup) return;
     const t = p.heldPowerup;
     let activate = false;
-    if (t === "paint" && p.cluster.length >= 5) activate = true;
+    if (t === "magnetBurst" && p.botState === "collect") activate = true;
+    else if (t === "shockPulse" && p.botState === "attack") activate = true;
+    else if (t === "heavyCore" && (p.botState === "attack" || p.botState === "bank")) activate = true;
+    else if (t === "paint" && p.cluster.length >= 5) activate = true;
     else if (t === "plusFive") activate = true;
     else if (t === "doubleScore" && p.botState === "bank") activate = true;
     else if (t === "superMagnet" && p.botState === "collect") activate = true;
@@ -1000,23 +1183,34 @@ export class World {
   private onRoundTimeUp() {
     // sudden death: if tie at top in a sudden-death mode, keep playing until next bank
     if (this.mode.suddenDeath) {
-      const top = Math.max(...this.players.map((p) => p.score));
-      const leaders = this.players.filter((p) => p.score === top);
-      if (leaders.length > 1 && !this.suddenDeath) {
+      if (this.leadGroupCount() > 1 && !this.suddenDeath) {
         this.suddenDeath = true;
         this.roundTime = 0.0001; // stay in overtime; ends on next bank below
       }
     }
     if (this.suddenDeath) {
       // end overtime as soon as the tie is broken
-      const top = Math.max(...this.players.map((p) => p.score));
-      const leaders = this.players.filter((p) => p.score === top);
-      if (leaders.length > 1) {
+      if (this.leadGroupCount() > 1) {
         this.roundTime = 0.0001;
         return; // keep playing
       }
     }
     this.endRound();
+  }
+
+  private leadGroupCount(): number {
+    if (this.mode.kind === "team-bank") {
+      const teamScores = new Map<number, number>();
+      for (const p of this.players) {
+        if (!teamScores.has(p.teamId)) teamScores.set(p.teamId, p.score);
+      }
+      const scores = [...teamScores.values()];
+      const top = Math.max(...scores);
+      return scores.filter((score) => score === top).length;
+    }
+
+    const top = Math.max(...this.players.map((p) => p.score));
+    return this.players.filter((p) => p.score === top).length;
   }
 
   private endRound() {
@@ -1027,19 +1221,45 @@ export class World {
   private advanceAfterRound() {
     if (this.round >= this.mode.rounds) {
       this.phase = "matchEnd";
-      let top = -1;
-      let id = -1;
-      for (const p of this.players) {
-        if (p.score > top) {
-          top = p.score;
-          id = p.id;
-        }
-      }
-      this.winnerId = id;
+      this.winnerId = this.resolveWinnerId();
     } else {
       this.round++;
       this.startRound();
     }
+  }
+
+  private resolveWinnerId(): number {
+    if (this.mode.kind === "survival") {
+      const alive = this.players.find((p) => p.lives > 0);
+      if (alive) return alive.id;
+    }
+
+    if (this.mode.kind === "team-bank") {
+      let topTeam = -1;
+      let topScore = -1;
+      const seen = new Set<number>();
+      for (const p of this.players) {
+        if (seen.has(p.teamId)) continue;
+        seen.add(p.teamId);
+        const score = this.players.filter((mate) => mate.teamId === p.teamId)[0]?.score ?? 0;
+        if (score > topScore) {
+          topScore = score;
+          topTeam = p.teamId;
+        }
+      }
+      const humanTeamWinner = this.players.find((p) => p.teamId === topTeam && p.id === this.humanId);
+      return humanTeamWinner?.id ?? this.players.find((p) => p.teamId === topTeam)?.id ?? -1;
+    }
+
+    let top = -1;
+    let id = -1;
+    for (const p of this.players) {
+      if (p.score > top) {
+        top = p.score;
+        id = p.id;
+      }
+    }
+    return id;
   }
 
   /** UI can skip the roundEnd / intro waits. */
@@ -1064,7 +1284,7 @@ export class World {
   }
 }
 
-export function makeWorld(modeId: string, totalPlayers: number, seed?: number): World {
+export function makeWorld(modeId: string, totalPlayers: number, seed?: number, opts: { tutorialAssist?: boolean } = {}): World {
   const mode = MODES.find((m) => m.id === modeId) ?? MODES[0];
-  return new World({ mode, humans: 1, totalPlayers, seed });
+  return new World({ mode, humans: 1, totalPlayers, seed, tutorialAssist: opts.tutorialAssist });
 }

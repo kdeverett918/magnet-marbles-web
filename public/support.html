@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="robots" content="noindex" />
+    <title>Magnet Marbles Support</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0a0c12;
+        --panel: rgba(255, 255, 255, 0.075);
+        --stroke: rgba(255, 255, 255, 0.18);
+        --text: #f3f5ff;
+        --muted: #b7c0dc;
+        --gold: #f2c14e;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(90% 60% at 20% 0%, rgba(255, 106, 61, 0.28), transparent 58%),
+          radial-gradient(90% 70% at 90% 100%, rgba(86, 208, 255, 0.22), transparent 62%),
+          linear-gradient(180deg, #171622 0%, var(--bg) 100%);
+        line-height: 1.55;
+      }
+      main {
+        width: min(860px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 48px 0;
+      }
+      a { color: #8fd7ff; font-weight: 800; }
+      .card {
+        border: 1px solid var(--stroke);
+        border-radius: 20px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.12), var(--panel));
+        box-shadow: 0 18px 48px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.2);
+        padding: clamp(22px, 4vw, 38px);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: clamp(34px, 7vw, 58px);
+        line-height: 0.95;
+      }
+      h2 { margin: 28px 0 8px; font-size: 19px; }
+      p, li { color: var(--muted); }
+      ul { padding-left: 20px; }
+      .eyebrow {
+        margin: 0 0 12px;
+        color: var(--gold);
+        font-size: 12px;
+        font-weight: 950;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+      .updated { color: rgba(243,245,255,0.72); font-weight: 800; }
+      .home {
+        display: inline-flex;
+        margin-top: 26px;
+        padding: 10px 14px;
+        border: 1px solid var(--stroke);
+        border-radius: 999px;
+        text-decoration: none;
+        background: rgba(255,255,255,0.08);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article class="card">
+        <p class="eyebrow">Magnet Marbles</p>
+        <h1>Support</h1>
+        <p class="updated">Last updated: June 21, 2026</p>
+
+        <h2>Fast Fixes</h2>
+        <ul>
+          <li>If the game feels slow on a phone, open Options in the menu and choose Lite.</li>
+          <li>If audio is silent, tap the screen once, then toggle Sound off and on.</li>
+          <li>If online play stalls, wait up to 60 seconds for the server to wake, then retry.</li>
+          <li>If the app looks stale after a deploy, refresh the page or clear site data.</li>
+        </ul>
+
+        <h2>Controls</h2>
+        <ul>
+          <li>Touch: drag on the movement side to roll, hold Magnet, tap Dash.</li>
+          <li>Keyboard: WASD or arrows move, Space holds magnet, Shift dashes, E uses a powerup.</li>
+        </ul>
+
+        <h2>What To Include In A Bug Report</h2>
+        <ul>
+          <li>Device model, browser, and operating system.</li>
+          <li>Game mode, online room code if relevant, and what happened before the issue.</li>
+          <li>A screenshot or screen recording when possible.</li>
+          <li>Whether High or Lite quality was selected.</li>
+        </ul>
+
+        <h2>Data Reset</h2>
+        <p>
+          To reset settings, tutorial state, stars, and trail unlocks, clear site data for
+          this domain in your browser settings.
+        </p>
+
+        <a class="home" href="./">Back to game</a>
+      </article>
+    </main>
+  </body>
+</html>

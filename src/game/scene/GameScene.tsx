@@ -4,8 +4,8 @@ import { Environment, Lightformer } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { CONFIG } from "../data/config";
-import { getWorld, useGame, type Hud } from "../store";
-import { input, clearEdges, setTouchMagnet } from "../input/controls";
+import { getWorld, useGame, type Hud, type TutorialStep } from "../store";
+import { input, clearEdges, setTouchMagnet, drag, setDragTarget, endDrag, registerTapDash } from "../input/controls";
 import { sfx } from "../audio/sfx";
 import type { PowerupType } from "../data/types";
 import { makeGradientTexture } from "./textures";
@@ -15,12 +15,14 @@ import { Players } from "./Players";
 import { Goals } from "./Goals";
 import { Pickups } from "./Pickups";
 import { Obstacles } from "./Obstacles";
+import { MagnetTethers } from "./MagnetTethers";
 import { Particles, type ParticlesHandle } from "./Particles";
 import { AmbientMotes } from "./Ambient";
+import { useReducedMotion } from "../ui/useReducedMotion";
 
-const BUFFS: PowerupType[] = ["superMagnet", "doubleScore", "turbo", "disableMagnet"];
+const BUFFS: PowerupType[] = ["magnetBurst", "heavyCore", "superMagnet", "doubleScore", "turbo", "disableMagnet"];
 
-function GameLoop({ particles }: { particles: React.RefObject<ParticlesHandle> }) {
+function GameLoop({ particles, reducedMotion }: { particles: React.RefObject<ParticlesHandle>; reducedMotion: boolean }) {
   const { camera, size } = useThree();
   const pushHud = useGame((s) => s.pushHud);
   const sound = useGame((s) => s.settings.sound);
@@ -38,6 +40,23 @@ function GameLoop({ particles }: { particles: React.RefObject<ParticlesHandle> }
 
     // feed the local human's input (slot = humanId; 0 for single-player)
     const hid = world.humanId;
+    const me = world.players[hid] ?? world.players[0];
+
+    // direct-drag steering: the marble chases the finger/cursor point on the table
+    if (drag.active && me) {
+      const dx = drag.x - me.pos.x;
+      const dz = drag.z - me.pos.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > 0.5) {
+        const m = Math.min(dist / 3.5, 1); // full speed when the finger is far
+        input.moveX = (dx / dist) * m;
+        input.moveZ = (dz / dist) * m;
+      } else {
+        input.moveX = 0;
+        input.moveZ = 0;
+      }
+    }
+
     setTouchMagnet(input.magnet);
     // auto-magnet while moving so one-thumb / casual play just works; the
     // explicit magnet button/Space still lets you magnetize while stationary.
@@ -77,7 +96,7 @@ function GameLoop({ particles }: { particles: React.RefObject<ParticlesHandle> }
 
     // camera: symmetric whole-table view that auto-fits the table for ANY aspect
     // ratio (mobile portrait + desktop landscape), with a gentle parallax.
-    const px = CONFIG.camera.parallax;
+    const px = reducedMotion ? 0 : CONFIG.camera.parallax;
     const target = new THREE.Vector3(
       (human?.pos.x ?? 0) * px,
       0,
@@ -103,7 +122,7 @@ function GameLoop({ particles }: { particles: React.RefObject<ParticlesHandle> }
       dir.y * fitDist,
       target.z + dir.z * fitDist + lift
     );
-    camera.position.lerp(desired, CONFIG.camera.tiltLerp);
+    camera.position.lerp(desired, reducedMotion ? 0.18 : CONFIG.camera.tiltLerp);
     camera.lookAt(target.x, 0, target.z + lift);
 
     // throttled HUD push
@@ -120,6 +139,9 @@ function GameLoop({ particles }: { particles: React.RefObject<ParticlesHandle> }
 function buildHud(world: ReturnType<typeof getWorld>): Hud {
   const w = world!;
   const human = w.players[w.humanId] ?? w.players[0];
+  const tutorialAssist = w.tutorialAssist;
+  const tutorialComplete = tutorialAssist && w.humanBankedThisMatch;
+  const tutorialStep = tutorialStepFor(w.phase, tutorialAssist, tutorialComplete, human?.cluster.length ?? 0);
   const active = BUFFS.filter((t) => (human?.activeUntil[t] ?? 0) > w.time).map((t) => ({
     type: t,
     remaining: (human!.activeUntil[t] ?? 0) - w.time,
@@ -132,12 +154,18 @@ function buildHud(world: ReturnType<typeof getWorld>): Hud {
     introCountdown: w.introCountdown,
     suddenDeath: w.suddenDeath,
     winnerId: w.winnerId,
+    modeId: w.mode.id,
+    modeName: w.mode.name,
+    modeKind: w.mode.kind,
+    modeObjective: w.mode.objective,
     humanId: w.humanId,
     players: w.players.map((p) => ({
       id: p.id,
       name: p.name,
       colorHex: p.colorHex,
+      teamId: p.teamId,
       score: p.score,
+      lives: p.lives,
       cluster: p.cluster.length,
       isBot: p.isBot,
       alive: p.alive,
@@ -147,21 +175,76 @@ function buildHud(world: ReturnType<typeof getWorld>): Hud {
     dashCooldown: human?.dashCooldown ?? 0,
     magnetActive: human?.magnetActive ?? false,
     clusterCap: CONFIG.magnet.clusterCap,
+    tutorialAssist,
+    tutorialStep,
+    tutorialGoalPulse: tutorialStep === "bank",
+    tutorialComplete,
   };
+}
+
+function tutorialStepFor(phase: string, assist: boolean, complete: boolean, cluster: number): TutorialStep {
+  if (!assist) return "off";
+  if (complete) return "done";
+  if (phase !== "intro" && phase !== "playing") return "off";
+  return cluster > 0 ? "bank" : "collect";
+}
+
+/** Invisible ground plane that turns finger/mouse drags into a table point. */
+function DragPlane() {
+  const dragging = useRef(false);
+  useEffect(() => {
+    const up = () => {
+      if (dragging.current) {
+        dragging.current = false;
+        endDrag();
+      }
+    };
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+  }, []);
+  return (
+    <mesh
+      rotation={[-Math.PI / 2, 0, 0]}
+      position={[0, 0.01, 0]}
+      onPointerDown={(e) => {
+        dragging.current = true;
+        setDragTarget(e.point.x, e.point.z);
+        registerTapDash();
+        sfx.ensure();
+      }}
+      onPointerMove={(e) => {
+        if (dragging.current) setDragTarget(e.point.x, e.point.z);
+      }}
+    >
+      <planeGeometry args={[400, 400]} />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+    </mesh>
+  );
 }
 
 export function GameScene() {
   const world = getWorld();
   const particles = useRef<ParticlesHandle>(null);
   const quality = useGame((s) => s.settings.quality);
+  const reducedMotion = useReducedMotion();
   if (!world) return null;
+  const mobileViewport = typeof window !== "undefined" &&
+    (window.innerWidth <= 760 || (window.matchMedia?.("(pointer: coarse)")?.matches ?? false));
+  const lite = quality === "lite";
+  const maxDpr = quality === "high" ? (mobileViewport ? 1.5 : 2) : 1;
+  const shadowsEnabled = quality === "high" && !mobileViewport;
+  const shadowMapSize: [number, number] = mobileViewport ? [768, 768] : [1024, 1024];
 
   return (
     <Canvas
-      shadows
-      dpr={[1, quality === "high" ? 2 : 1.25]}
+      shadows={shadowsEnabled}
+      dpr={[1, maxDpr]}
       camera={{ fov: CONFIG.camera.fov, position: [0, CONFIG.camera.height, CONFIG.camera.distance], near: 0.5, far: 200 }}
-      gl={{ antialias: true, powerPreference: "high-performance" }}
+      gl={{ antialias: !lite || !mobileViewport, powerPreference: "high-performance" }}
       onCreated={({ gl, scene }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 1.3;
@@ -174,7 +257,7 @@ export function GameScene() {
         scene.fog = new THREE.Fog("#222a5a", 48, 92);
       }}
     >
-      <GameLoop particles={particles} />
+      <GameLoop particles={particles} reducedMotion={reducedMotion} />
 
       {/* lighting — bright, colorful arcade key/fill/rim */}
       <ambientLight intensity={0.7} color="#aebbff" />
@@ -183,8 +266,8 @@ export function GameScene() {
         position={[10, 24, 12]}
         intensity={1.9}
         color="#fff2e0"
-        castShadow
-        shadow-mapSize={[1024, 1024]}
+        castShadow={shadowsEnabled}
+        shadow-mapSize={shadowMapSize}
         shadow-camera-left={-20}
         shadow-camera-right={20}
         shadow-camera-top={20}
@@ -204,13 +287,15 @@ export function GameScene() {
       </Environment>
 
       <Table world={world} />
+      <DragPlane />
       <Goals world={world} />
       <Obstacles world={world} />
       <Marbles world={world} />
+      <MagnetTethers world={world} />
       <Players world={world} />
       <Pickups world={world} />
       <Particles ref={particles} />
-      {quality === "high" && <AmbientMotes />}
+      {quality === "high" && !reducedMotion && !mobileViewport && <AmbientMotes />}
 
       {quality === "high" && (
         <EffectComposer multisampling={0} enableNormalPass={false}>

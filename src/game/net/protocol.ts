@@ -16,7 +16,9 @@ export interface SnapPlayer {
   name: string;
   c: string; // colorHex
   ci: number; // colorIndex
+  tm: number; // team id
   s: number; // score
+  lv: number; // survival lives, 0 outside survival
   cl: number; // cluster length
   al: boolean; // alive
   bot: boolean;
@@ -43,6 +45,7 @@ export interface SnapMarble {
 
 export interface SnapGoal {
   id: number;
+  tm: number; // team id
   c: string;
   a: number; // angle
   x: number;
@@ -78,6 +81,7 @@ export interface SnapRing {
 export interface Snapshot {
   t: number; // server sim time
   phase: RoundPhase;
+  mode: string;
   round: number;
   rounds: number;
   roundTime: number;

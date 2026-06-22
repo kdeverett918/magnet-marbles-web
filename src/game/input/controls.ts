@@ -23,6 +23,11 @@ let keyMagnet = false;
 
 const pressed = new Set<string>();
 
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  const el = target instanceof HTMLElement ? target : null;
+  return Boolean(el?.closest("button, input, select, textarea, a, [role='button'], [contenteditable='true']"));
+}
+
 function recompute() {
   let x = 0;
   let z = 0;
@@ -64,11 +69,36 @@ export function triggerActivate() {
   input.activate = true;
 }
 
+// --- direct-drag steering: the marble chases a world-space point (finger/mouse) ---
+export const drag = { active: false, x: 0, z: 0 };
+export function setDragTarget(x: number, z: number) {
+  drag.active = true;
+  drag.x = x;
+  drag.z = z;
+}
+export function endDrag() {
+  drag.active = false;
+  recompute(); // fall back to keyboard movement (or stop)
+}
+
+// double-tap to dash (touch + mouse)
+let lastTap = 0;
+export function registerTapDash() {
+  const now = performance.now();
+  if (now - lastTap < 320) {
+    input.dash = true;
+    lastTap = 0;
+  } else {
+    lastTap = now;
+  }
+}
+
 let installed = false;
 export function installKeyboard(): () => void {
   if (installed) return () => undefined;
   installed = true;
   const down = (e: KeyboardEvent) => {
+    if (isInteractiveTarget(e.target)) return;
     if (e.repeat) return;
     pressed.add(e.code);
     if (e.code === "Space") {
@@ -106,6 +136,26 @@ export function setTouchMagnetHeld(on: boolean) {
 
 /** Called by the loop AFTER consuming, to clear edge-triggered inputs. */
 export function clearEdges() {
+  input.dash = false;
+  input.activate = false;
+}
+
+export function resetInputForTests() {
+  pressed.clear();
+  keyMove.x = 0;
+  keyMove.z = 0;
+  keyMagnet = false;
+  touchMove.x = 0;
+  touchMove.z = 0;
+  touchActive = false;
+  touchMagnetHeld = false;
+  drag.active = false;
+  drag.x = 0;
+  drag.z = 0;
+  lastTap = 0;
+  input.moveX = 0;
+  input.moveZ = 0;
+  input.magnet = false;
   input.dash = false;
   input.activate = false;
 }

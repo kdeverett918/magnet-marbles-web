@@ -5,6 +5,7 @@ import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { makeMarbleMaterial } from "./marbleMaterial";
 import { makeGradientTexture } from "./textures";
+import { useReducedMotion } from "../ui/useReducedMotion";
 
 const LAYOUT = [
   { color: "#F24447", x: -6.2, y: 2.4, z: 0.0, r: 1.7, spd: 0.5 },
@@ -16,10 +17,18 @@ const LAYOUT = [
   { color: "#B66BFF", x: 0.4, y: 0.2, z: 1.5, r: 1.5, spd: 0.45 },
 ];
 
-function FloatingMarble({ d, i }: { d: (typeof LAYOUT)[number]; i: number }) {
+function FloatingMarble({ d, i, reducedMotion }: { d: (typeof LAYOUT)[number]; i: number; reducedMotion: boolean }) {
   const ref = useRef<THREE.Mesh>(null);
   const mat = useMemo(() => makeMarbleMaterial(d.color), [d.color]);
   useFrame((state) => {
+    if (reducedMotion) {
+      mat.uniforms.uTime.value = 0;
+      if (ref.current) {
+        ref.current.position.set(d.x, d.y, d.z);
+        ref.current.rotation.set(0, i * 0.2, 0);
+      }
+      return;
+    }
     const t = state.clock.elapsedTime;
     mat.uniforms.uTime.value = t;
     if (ref.current) {
@@ -36,7 +45,7 @@ function FloatingMarble({ d, i }: { d: (typeof LAYOUT)[number]; i: number }) {
   );
 }
 
-function Scene() {
+function Scene({ reducedMotion }: { reducedMotion: boolean }) {
   return (
     <>
       <ambientLight intensity={0.4} color="#9fb0d0" />
@@ -48,10 +57,10 @@ function Scene() {
         <Lightformer intensity={1.2} position={[-6, 2, -4]} scale={[6, 6, 1]} color="#ff88aa" />
       </Environment>
       {LAYOUT.map((d, i) => (
-        <FloatingMarble key={i} d={d} i={i} />
+        <FloatingMarble key={i} d={d} i={i} reducedMotion={reducedMotion} />
       ))}
       <EffectComposer multisampling={0} enableNormalPass={false}>
-        <Bloom intensity={1.0} luminanceThreshold={0.55} luminanceSmoothing={0.2} mipmapBlur radius={0.7} />
+        <Bloom intensity={reducedMotion ? 0.55 : 1.0} luminanceThreshold={0.55} luminanceSmoothing={0.2} mipmapBlur radius={0.7} />
         <Vignette eskil={false} offset={0.35} darkness={0.5} />
       </EffectComposer>
     </>
@@ -59,6 +68,8 @@ function Scene() {
 }
 
 export function MenuBackground() {
+  const reducedMotion = useReducedMotion();
+
   return (
     <div className="menu-bg">
       <Canvas
@@ -76,7 +87,7 @@ export function MenuBackground() {
           scene.fog = new THREE.Fog("#26285c", 16, 34);
         }}
       >
-        <Scene />
+        <Scene reducedMotion={reducedMotion} />
       </Canvas>
     </div>
   );

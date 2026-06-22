@@ -19,6 +19,9 @@ export const CANDY_COLORS = [
 export const JUMBO_COLOR = "#FFD86B"; // iridescent gold
 
 export type PowerupType =
+  | "magnetBurst"
+  | "shockPulse"
+  | "heavyCore"
   | "superMagnet"
   | "doubleScore"
   | "plusFive"
@@ -59,12 +62,14 @@ export interface Player {
   name: string;
   colorHex: string;
   colorIndex: number;
+  teamId: number;
   pos: Vec2;
   vel: Vec2;
   y: number;
   vy: number;
   radius: number;
   score: number;
+  lives: number;
   alive: boolean;
   respawnTimer: number;
   // input intent (set by controls/bot each step), normalized direction + magnitude
@@ -96,6 +101,7 @@ export interface Player {
 
 export interface Goal {
   ownerId: number;
+  teamId: number;
   colorHex: string;
   angle: number;
   pos: Vec2;
@@ -136,10 +142,13 @@ export interface ModeDef {
   id: string;
   name: string;
   tagline: string;
+  objective: string;
+  kind: "classic" | "battle" | "king-magnet" | "team-bank" | "survival";
   rounds: number;
   duration: number;
   jumbo: boolean;
   suddenDeath: boolean;
+  lives?: number;
 }
 
 /** One-shot visual events the sim emits; the render layer drains and plays them. */

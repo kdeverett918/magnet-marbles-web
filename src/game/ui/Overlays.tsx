@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useGame, getWorld } from "../store";
 
 export function Overlays() {
@@ -5,9 +6,16 @@ export function Overlays() {
   const quitToMenu = useGame((s) => s.quitToMenu);
   const startGame = useGame((s) => s.startGame);
   const startOnline = useGame((s) => s.startOnline);
+  const claimMatchReward = useGame((s) => s.claimMatchReward);
+  const lastReward = useGame((s) => s.lastReward);
   const online = useGame((s) => s.online);
   const modeId = useGame((s) => s.modeId);
   const playerCount = useGame((s) => s.playerCount);
+  const runId = useGame((s) => s.runId);
+
+  useEffect(() => {
+    if (hud.phase === "matchEnd") claimMatchReward(hud);
+  }, [claimMatchReward, hud, runId]);
 
   if (hud.phase === "intro") {
     const c = Math.ceil(hud.introCountdown);
@@ -55,6 +63,16 @@ export function Overlays() {
               </div>
             ))}
           </div>
+
+          {isMatch && !online && lastReward?.runId === runId && (
+            <div className="reward-strip" aria-label="Stars earned">
+              <div>
+                <span className="section-label">Reward</span>
+                <strong>+{lastReward.stars}★</strong>
+              </div>
+              <p>{lastReward.reasons.join(" · ")}</p>
+            </div>
+          )}
 
           {isMatch ? (
             <div className="row">

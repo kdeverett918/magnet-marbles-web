@@ -43,7 +43,9 @@ export const CONFIG = {
   magnet: {
     radius: 4.6,
     superRadius: 7.8,
+    burstRadius: 6.9,
     force: 46,
+    burstForceMult: 1.85,
     minDistance: 0.9, // distance floor to avoid blow-up
     captureRadius: 1.35, // within this -> joins cluster
     clusterCap: 18,
@@ -71,6 +73,13 @@ export const CONFIG = {
     stealFraction: 0.34, // fraction of victim cluster transferred on a bump
     knockoffSpeed: 11, // relative speed near edge to fully knock off
     pushImpulse: 1.0, // extra shove multiplier on player-player hit
+    battleStealScore: 1,
+    battleKnockoffBonus: 4,
+    shockPulseRadius: 5.3,
+    shockPulseDropFraction: 0.5,
+    shockPulseImpulse: 7.5,
+    heavyCoreMassMult: 2.2,
+    heavyCoreSpeedMult: 0.82,
   },
 
   // --- Powerups ---
@@ -78,6 +87,8 @@ export const CONFIG = {
     spawnCount: 3, // simultaneous pickups on the table
     respawnTime: 7,
     durations: {
+      magnetBurst: 2.2,
+      heavyCore: 4.5,
       superMagnet: 7,
       doubleScore: 9,
       turbo: 4.5,
@@ -87,6 +98,13 @@ export const CONFIG = {
     superMagnetSpeedBonus: 1.0,
     turboSpeedMult: 1.9,
     plusFive: 5,
+  },
+
+  // --- Mode scoring pressure ---
+  king: {
+    minCluster: 5,
+    scoreEvery: 2,
+    scoreAmount: 1,
   },
 
   // --- Bots ---
@@ -118,29 +136,58 @@ export const MODES: ModeDef[] = [
   {
     id: "classic",
     name: "Classic",
-    tagline: "Most marbles banked in 3 rounds wins.",
+    tagline: "Bank the most marbles in 3 rounds.",
+    objective: "Collect candy marbles, carry a risky cluster, and bank at your goal.",
+    kind: "classic",
     rounds: 3,
     duration: 90,
     jumbo: false,
     suddenDeath: true,
   },
   {
-    id: "heist",
-    name: "Heist",
-    tagline: "Golden jumbo marbles worth 5. High risk, high reward.",
+    id: "battle",
+    name: "Battle",
+    tagline: "Steal, shove, and score from hits.",
+    objective: "Dash into loaded rivals to steal marbles and earn combat points.",
+    kind: "battle",
     rounds: 3,
+    duration: 90,
+    jumbo: false,
+    suddenDeath: true,
+  },
+  {
+    id: "king-magnet",
+    name: "King Magnet",
+    tagline: "Hold the biggest cluster for bonus points.",
+    objective: "Carry the largest cluster; the King scores every 2 seconds.",
+    kind: "king-magnet",
+    rounds: 1,
     duration: 90,
     jumbo: true,
     suddenDeath: true,
   },
   {
-    id: "blitz",
-    name: "Blitz",
-    tagline: "One frantic 60-second round. Pure chaos.",
+    id: "team-bank",
+    name: "Team Bank",
+    tagline: "2v2 shared-score banking.",
+    objective: "Bank at either team goal; your team shares every point.",
+    kind: "team-bank",
+    rounds: 3,
+    duration: 90,
+    jumbo: false,
+    suddenDeath: true,
+  },
+  {
+    id: "survival",
+    name: "Survival",
+    tagline: "Three lives. Last marble standing.",
+    objective: "Stay on the table, steal safely, and outlast the other marbles.",
+    kind: "survival",
     rounds: 1,
-    duration: 60,
+    duration: 90,
     jumbo: false,
     suddenDeath: false,
+    lives: 3,
   },
 ];
 
@@ -148,6 +195,9 @@ export const POWERUP_META: Record<
   PowerupType,
   { label: string; short: string; color: string; glyph: string; instant: boolean; desc: string }
 > = {
+  magnetBurst: { label: "Magnet Burst", short: "MAG", color: "#56d0ff", glyph: "magnet", instant: false, desc: "Stronger pull for 2 seconds" },
+  shockPulse: { label: "Shock Pulse", short: "PULSE", color: "#ff7a3d", glyph: "pulse", instant: true, desc: "Knock loose enemy carried marbles" },
+  heavyCore: { label: "Heavy Core", short: "HEAVY", color: "#b6c4d8", glyph: "core", instant: false, desc: "Harder to shove, but slower" },
   superMagnet: { label: "Super Magnet", short: "MAG", color: "#56d0ff", glyph: "magnet", instant: false, desc: "Huge magnet range" },
   doubleScore: { label: "Double Score", short: "x2", color: "#ffd34d", glyph: "x2", instant: false, desc: "2x banked points" },
   plusFive: { label: "Plus Five", short: "+5", color: "#7CFF6B", glyph: "+5", instant: true, desc: "Instant +5 points" },

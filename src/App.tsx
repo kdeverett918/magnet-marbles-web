@@ -10,10 +10,13 @@ import { sfx } from "./game/audio/sfx";
 
 export function App() {
   const screen = useGame((s) => s.screen);
+  const sound = useGame((s) => s.settings.sound);
 
   useEffect(() => {
     const cleanup = installKeyboard();
-    const wake = () => sfx.ensure();
+    const wake = () => {
+      if (sound) sfx.ensure();
+    };
     window.addEventListener("pointerdown", wake, { once: false });
     const noCtx = (e: Event) => e.preventDefault();
     window.addEventListener("contextmenu", noCtx);
@@ -22,7 +25,7 @@ export function App() {
       window.removeEventListener("pointerdown", wake);
       window.removeEventListener("contextmenu", noCtx);
     };
-  }, []);
+  }, [sound]);
 
   return (
     <div className="app">

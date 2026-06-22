@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="robots" content="noindex" />
+    <title>Magnet Marbles Privacy</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0a0c12;
+        --panel: rgba(255, 255, 255, 0.075);
+        --stroke: rgba(255, 255, 255, 0.18);
+        --text: #f3f5ff;
+        --muted: #b7c0dc;
+        --gold: #f2c14e;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(90% 60% at 20% 0%, rgba(255, 106, 61, 0.28), transparent 58%),
+          radial-gradient(90% 70% at 90% 100%, rgba(86, 208, 255, 0.22), transparent 62%),
+          linear-gradient(180deg, #171622 0%, var(--bg) 100%);
+        line-height: 1.55;
+      }
+      main {
+        width: min(860px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 48px 0;
+      }
+      a { color: #8fd7ff; font-weight: 800; }
+      .card {
+        border: 1px solid var(--stroke);
+        border-radius: 20px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.12), var(--panel));
+        box-shadow: 0 18px 48px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.2);
+        padding: clamp(22px, 4vw, 38px);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: clamp(34px, 7vw, 58px);
+        line-height: 0.95;
+      }
+      h2 { margin: 28px 0 8px; font-size: 19px; }
+      p, li { color: var(--muted); }
+      ul { padding-left: 20px; }
+      .eyebrow {
+        margin: 0 0 12px;
+        color: var(--gold);
+        font-size: 12px;
+        font-weight: 950;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+      .updated { color: rgba(243,245,255,0.72); font-weight: 800; }
+      .home {
+        display: inline-flex;
+        margin-top: 26px;
+        padding: 10px 14px;
+        border: 1px solid var(--stroke);
+        border-radius: 999px;
+        text-decoration: none;
+        background: rgba(255,255,255,0.08);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article class="card">
+        <p class="eyebrow">Magnet Marbles</p>
+        <h1>Privacy</h1>
+        <p class="updated">Last updated: June 21, 2026</p>
+
+        <h2>Summary</h2>
+        <p>
+          Magnet Marbles is a browser game prototype. The game does not use ads,
+          analytics trackers, user accounts, payment processing, or cross-site tracking.
+        </p>
+
+        <h2>Data Stored On Your Device</h2>
+        <p>The game uses browser local storage for gameplay convenience:</p>
+        <ul>
+          <li>Audio and quality settings.</li>
+          <li>First-run tutorial completion.</li>
+          <li>Offline progression, stars, daily challenge completion, and selected trail cosmetic.</li>
+        </ul>
+        <p>
+          This data stays in your browser unless you clear site data or your browser syncs it
+          under settings you control.
+        </p>
+
+        <h2>Online Play</h2>
+        <p>
+          Online matches connect to the Magnet Marbles game server through WebSockets. The
+          server receives temporary session identifiers, room information, selected mode,
+          and live gameplay input needed to run the match. The current game does not create
+          accounts or grant online progression rewards.
+        </p>
+
+        <h2>Third Parties</h2>
+        <p>
+          Hosting providers may process standard web server logs such as IP address,
+          request time, user agent, and error information for security and reliability.
+          Magnet Marbles does not add third-party analytics, ad SDKs, or social trackers.
+        </p>
+
+        <h2>Children</h2>
+        <p>
+          The game is designed as an arcade game and does not knowingly collect personal
+          information from children. Do not enter personal information into room codes or
+          support reports.
+        </p>
+
+        <h2>Control</h2>
+        <p>
+          You can reset local game data by clearing site data for this domain in your
+          browser settings.
+        </p>
+
+        <a class="home" href="./">Back to game</a>
+      </article>
+    </main>
+  </body>
+</html>

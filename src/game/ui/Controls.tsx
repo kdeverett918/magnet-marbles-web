@@ -1,92 +1,76 @@
 import { useRef, useState } from "react";
 import { useGame } from "../store";
-import {
-  setTouchMove,
-  setTouchMagnetHeld,
-  triggerDash,
-  triggerActivate,
-} from "../input/controls";
-import { PU_ICON } from "./icons";
+import { setTouchMagnetHeld, triggerDash, triggerActivate } from "../input/controls";
+import { rightGestureShouldDash, type TouchPoint } from "../input/touchGestures";
+import { PU_ICON, PU_LABEL } from "./icons";
 import { sfx } from "../audio/sfx";
 
-const STICK_RADIUS = 60;
-
+/**
+ * Minimal on-screen controls. Movement is direct-drag on the play field
+ * (handled by the 3D DragPlane) for finger + mouse; these buttons cover
+ * magnet (hold), powerup use, and dash. Keyboard also works (WASD/Space/Shift/E).
+ */
 export function Controls() {
   const hud = useGame((s) => s.hud);
-  const [stick, setStick] = useState<{ x: number; y: number; nx: number; ny: number } | null>(null);
-  const pid = useRef<number | null>(null);
   const [magnetOn, setMagnetOn] = useState(false);
+  const rightGesture = useRef<(TouchPoint & { id: number }) | null>(null);
 
-  // Render the control layer for the whole live game (intro + playing) so the
-  // pointer handlers are always mounted. (Returning null during intro was why
-  // touch input never attached.)
   const inGame = hud.phase === "intro" || hud.phase === "playing";
   if (!inGame) return null;
 
-  const onDown = (e: React.PointerEvent) => {
-    if (pid.current !== null) return;
-    pid.current = e.pointerId;
+  const held = hud.heldPowerup;
+  const dashReady = hud.dashCooldown <= 0;
+  const setMag = (on: boolean) => {
+    setMagnetOn(on);
+    setTouchMagnetHeld(on);
+  };
+  const onRightDown = (e: React.PointerEvent) => {
+    if (rightGesture.current !== null) return;
+    e.preventDefault();
+    rightGesture.current = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() };
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
       /* ignore */
     }
-    setStick({ x: e.clientX, y: e.clientY, nx: 0, ny: 0 });
+    setMag(true);
     sfx.ensure();
   };
-  const onMove = (e: React.PointerEvent) => {
-    if (pid.current !== e.pointerId) return;
-    setStick((s) => {
-      if (!s) return s;
-      let dx = e.clientX - s.x;
-      let dy = e.clientY - s.y;
-      const d = Math.hypot(dx, dy);
-      if (d > STICK_RADIUS) {
-        dx = (dx / d) * STICK_RADIUS;
-        dy = (dy / d) * STICK_RADIUS;
-      }
-      setTouchMove(dx / STICK_RADIUS, dy / STICK_RADIUS, true);
-      return { ...s, nx: dx, ny: dy };
-    });
+  const onRightUp = (e: React.PointerEvent, canceled = false) => {
+    const gesture = rightGesture.current;
+    if (!gesture || gesture.id !== e.pointerId) return;
+    e.preventDefault();
+    rightGesture.current = null;
+    setMag(false);
+    if (rightGestureShouldDash(gesture, { x: e.clientX, y: e.clientY, t: performance.now() }, dashReady, canceled)) {
+      triggerDash();
+    }
   };
-  const onUp = (e: React.PointerEvent) => {
-    if (pid.current !== e.pointerId) return;
-    pid.current = null;
-    setStick(null);
-    setTouchMove(0, 0, false);
-  };
-
-  const held = hud.heldPowerup;
-  const dashReady = hud.dashCooldown <= 0;
 
   return (
     <div className="controls">
       <div
-        className="stick-zone"
-        onPointerDown={onDown}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        onPointerCancel={onUp}
+        className={`right-gesture-zone ${magnetOn ? "on" : ""}`}
+        aria-hidden="true"
+        onPointerDown={onRightDown}
+        onPointerUp={(e) => onRightUp(e)}
+        onPointerCancel={(e) => onRightUp(e, true)}
       >
-        {stick ? (
-          <div className="stick" style={{ left: stick.x, top: stick.y }}>
-            <div
-              className="nub"
-              style={{ transform: `translate(calc(-50% + ${stick.nx}px), calc(-50% + ${stick.ny}px))` }}
-            />
-          </div>
-        ) : (
-          <div className="stick-hint">
-            <div className="stick-hint-ring" />
-            <span>drag to move</span>
-          </div>
-        )}
+        <div className="gesture-hint">
+          <span>hold magnet</span>
+          <span>tap / flick dash</span>
+        </div>
       </div>
+
+      <div className="move-hint">drag to move · lower-right hold / tap dash</div>
 
       <div className="action-cluster">
         <div className="act-col">
           <button
+            type="button"
             className={`act ${held ? "held" : "disabled"}`}
+            aria-label={held ? `Use ${PU_LABEL[held]}` : "No powerup ready"}
+            disabled={!held}
             onPointerDown={(e) => {
               e.preventDefault();
               if (held) {
@@ -99,7 +83,10 @@ export function Controls() {
             <span style={{ fontSize: 9 }}>{held ? "USE" : "PWR"}</span>
           </button>
           <button
+            type="button"
             className={`act ${dashReady ? "" : "disabled"}`}
+            aria-label={dashReady ? "Dash" : "Dash cooling down"}
+            disabled={!dashReady}
             onPointerDown={(e) => {
               e.preventDefault();
               triggerDash();
@@ -112,22 +99,21 @@ export function Controls() {
         </div>
 
         <button
+          type="button"
           className={`act big ${magnetOn ? "on" : ""}`}
+          aria-label="Hold magnet"
+          aria-pressed={magnetOn}
           onPointerDown={(e) => {
             e.preventDefault();
-            setMagnetOn(true);
-            setTouchMagnetHeld(true);
+            setMag(true);
             sfx.ensure();
           }}
           onPointerUp={(e) => {
             e.preventDefault();
-            setMagnetOn(false);
-            setTouchMagnetHeld(false);
+            setMag(false);
           }}
-          onPointerLeave={() => {
-            setMagnetOn(false);
-            setTouchMagnetHeld(false);
-          }}
+          onPointerLeave={() => setMag(false)}
+          onPointerCancel={() => setMag(false)}
         >
           <span className="ico">🧲</span>
           <span style={{ fontSize: 10 }}>MAGNET</span>

@@ -1,4 +1,4 @@
-import { Room, Client } from "colyseus";
+import { Room, type Client } from "@colyseus/core";
 import { World } from "../../src/game/sim/world";
 import { MODES } from "../../src/game/data/config";
 import { buildSnapshot } from "../../src/game/net/snapshot";
@@ -46,8 +46,14 @@ export class ArenaRoom extends Room {
       const p = this.world.players[id];
       if (p) {
         p.isBot = true; // a bot takes over the abandoned seat
-        p.wantDash = p.wantActivate = false;
+        p.moveX = 0;
+        p.moveZ = 0;
+        p.wantMagnet = false;
+        p.wantDash = false;
+        p.wantActivate = false;
       }
+      this.pendingDash[id] = false;
+      this.pendingActivate[id] = false;
       this.slotBySession.delete(client.sessionId);
     }
   }

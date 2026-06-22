@@ -1,0 +1,16 @@
+{
+  "name": "nanoid",
+  "version": "3.3.8",
+  "type": "module",
+  "main": "./index.cjs",
+  "module": "./index.js",
+  "exports": {
+    ".": {
+      "import": "./index.js",
+      "require": "./index.cjs",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "license": "MIT"
+}

@@ -1,3 +1,4 @@
+import { MODES } from "../data/config";
 import type { FxEvent, Goal, Marble, Player, PowerupPickup, GoalButton, AutoGoalRing, RoundPhase } from "../data/types";
 import type { NetInput, Snapshot } from "./protocol";
 
@@ -19,7 +20,7 @@ export class NetView {
   introCountdown = 0;
   suddenDeath = false;
   winnerId = -1;
-  mode = { rounds: 3 };
+  mode = MODES[0];
 
   players: (Player & Target)[] = [];
   marbles: (Marble & Target)[] = [];
@@ -30,6 +31,8 @@ export class NetView {
 
   fx: FxEvent[] = [];
   humanId = 0;
+  tutorialAssist = false;
+  humanBankedThisMatch = false;
 
   private send: (type: string, data?: any) => void;
   private inputAccum = 0;
@@ -42,8 +45,8 @@ export class NetView {
   applySnapshot(s: Snapshot) {
     this.time = s.t;
     this.phase = s.phase;
+    this.mode = MODES.find((mode) => mode.id === s.mode) ?? this.mode;
     this.round = s.round;
-    this.mode.rounds = s.rounds;
     this.roundTime = s.roundTime;
     this.introCountdown = s.intro;
     this.suddenDeath = s.sd;
@@ -61,7 +64,9 @@ export class NetView {
       p.name = sp.name;
       p.colorHex = sp.c;
       p.colorIndex = sp.ci;
+      p.teamId = sp.tm;
       p.score = sp.s;
+      p.lives = sp.lv;
       p.alive = sp.al;
       p.isBot = sp.bot;
       p.radius = 0.85;
@@ -102,6 +107,7 @@ export class NetView {
     // goals
     this.goals = s.goals.map((g) => ({
       ownerId: g.id,
+      teamId: g.tm,
       colorHex: g.c,
       angle: g.a,
       pos: { x: g.x, z: g.z },
@@ -202,9 +208,9 @@ export class NetView {
 
   private blankPlayer(id: number): Player & Target {
     return {
-      id, isBot: false, name: "", colorHex: "#fff", colorIndex: id,
+      id, isBot: false, name: "", colorHex: "#fff", colorIndex: id, teamId: id,
       pos: { x: 0, z: 0 }, vel: { x: 0, z: 0 }, y: 0, vy: 0, radius: 0.85,
-      score: 0, alive: true, respawnTimer: 0,
+      score: 0, lives: 0, alive: true, respawnTimer: 0,
       moveX: 0, moveZ: 0, wantMagnet: false, wantDash: false, wantActivate: false,
       magnetActive: false, dashCooldown: 0, dashTimer: 0, cluster: [],
       heldPowerup: null, activeUntil: {}, goalAngle: 0,

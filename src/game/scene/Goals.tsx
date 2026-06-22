@@ -20,6 +20,7 @@ function GoalBowl({ world, ownerId }: { world: Arena; ownerId: number }) {
   const core = useRef<THREE.Mesh>(null);
   const beamRef = useRef<THREE.Mesh>(null);
   const blockRef = useRef<THREE.Group>(null);
+  const coachRef = useRef<THREE.Group>(null);
 
   // concentric whirlpool rings descending into a bright centre
   const rings = useMemo(() => {
@@ -53,6 +54,16 @@ function GoalBowl({ world, ownerId }: { world: Arena; ownerId: number }) {
     if (blockRef.current) {
       blockRef.current.visible = blocked;
       blockRef.current.rotation.y += dt * 1.5;
+    }
+    if (coachRef.current) {
+      const human = world.players[world.humanId];
+      const showCoach = ownerId === world.humanId && world.phase === "playing" && !blocked && (human?.cluster.length ?? 0) > 0;
+      coachRef.current.visible = showCoach;
+      if (showCoach) {
+        const pulse = 1 + Math.sin(t * 6) * 0.1;
+        coachRef.current.scale.setScalar(pulse);
+        coachRef.current.rotation.y -= dt * 2.4;
+      }
     }
   });
 
@@ -100,6 +111,22 @@ function GoalBowl({ world, ownerId }: { world: Arena; ownerId: number }) {
         <cylinderGeometry args={[goal.radius * 0.4, goal.radius * 0.75, 5.2, 20, 1, true]} />
         <meshBasicMaterial color={color} transparent opacity={0.12} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
+
+      {/* onboarding / carried-haul home ping */}
+      <group ref={coachRef} visible={false} position={[0, 0.1, 0]}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.1, 0]}>
+          <torusGeometry args={[goal.radius + 0.55, 0.08, 12, 72]} />
+          <meshBasicMaterial color="#ffffff" transparent opacity={0.75} blending={THREE.AdditiveBlending} depthWrite={false} />
+        </mesh>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.12, 0]}>
+          <ringGeometry args={[goal.radius + 0.82, goal.radius + 1.1, 72]} />
+          <meshBasicMaterial color={color} transparent opacity={0.25} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} depthWrite={false} />
+        </mesh>
+        <mesh position={[0, 2.8, 0]}>
+          <cylinderGeometry args={[goal.radius * 0.12, goal.radius * 0.55, 5.5, 24, 1, true]} />
+          <meshBasicMaterial color={color} transparent opacity={0.22} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} depthWrite={false} />
+        </mesh>
+      </group>
 
       {/* light spill */}
       <pointLight color={color} intensity={7} distance={9} position={[0, 1.0, 0]} />

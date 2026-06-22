@@ -2,16 +2,20 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { Arena } from "../sim/arena";
+import { useGame } from "../store";
 
 const dummy = new THREE.Object3D();
 const col = new THREE.Color();
 
 export function Marbles({ world }: { world: Arena }) {
   const count = world.marbles.length;
+  const quality = useGame((s) => s.settings.quality);
+  const lite = quality === "lite";
+  const showHalo = !lite;
   const ref = useRef<THREE.InstancedMesh>(null);
   const halo = useRef<THREE.InstancedMesh>(null);
 
-  const geo = useMemo(() => new THREE.SphereGeometry(1, 24, 18), []);
+  const geo = useMemo(() => new THREE.SphereGeometry(1, lite ? 16 : 24, lite ? 12 : 18), [lite]);
   const haloGeo = useMemo(() => new THREE.SphereGeometry(1, 16, 12), []);
   const mat = useMemo(
     () =>
@@ -39,7 +43,7 @@ export function Marbles({ world }: { world: Arena }) {
 
   useLayoutEffect(() => {
     const mesh = ref.current;
-    const h = halo.current;
+    const h = showHalo ? halo.current : null;
     if (!mesh) return;
     for (let i = 0; i < count; i++) {
       col.set(world.marbles[i].colorHex);
@@ -48,11 +52,11 @@ export function Marbles({ world }: { world: Arena }) {
     }
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     if (h?.instanceColor) h.instanceColor.needsUpdate = true;
-  }, [count, world]);
+  }, [count, showHalo, world]);
 
   useFrame(() => {
     const mesh = ref.current;
-    const h = halo.current;
+    const h = showHalo ? halo.current : null;
     if (!mesh) return;
     for (let i = 0; i < count; i++) {
       const m = world.marbles[i];
@@ -90,8 +94,8 @@ export function Marbles({ world }: { world: Arena }) {
 
   return (
     <>
-      <instancedMesh ref={halo} args={[haloGeo, haloMat, count]} frustumCulled={false} renderOrder={-1} />
-      <instancedMesh ref={ref} args={[geo, mat, count]} castShadow receiveShadow frustumCulled={false} />
+      {showHalo && <instancedMesh ref={halo} args={[haloGeo, haloMat, count]} frustumCulled={false} renderOrder={-1} />}
+      <instancedMesh ref={ref} args={[geo, mat, count]} castShadow={!lite} receiveShadow={!lite} frustumCulled={false} />
     </>
   );
 }

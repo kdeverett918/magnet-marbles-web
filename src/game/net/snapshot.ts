@@ -2,7 +2,7 @@ import type { World } from "../sim/world";
 import type { FxEvent, PowerupType } from "../data/types";
 import type { Snapshot, SnapPlayer } from "./protocol";
 
-const BUFFS: PowerupType[] = ["superMagnet", "doubleScore", "turbo", "disableMagnet"];
+const BUFFS: PowerupType[] = ["magnetBurst", "heavyCore", "superMagnet", "doubleScore", "turbo", "disableMagnet"];
 const STATE_CODE: Record<string, number> = { dead: 0, free: 1, carried: 2, falling: 3, banked: 0 };
 
 /** Serialize the authoritative World into a wire snapshot (server-side). */
@@ -10,6 +10,7 @@ export function buildSnapshot(world: World, fx: FxEvent[]): Snapshot {
   return {
     t: world.time,
     phase: world.phase,
+    mode: world.mode.id,
     round: world.round,
     rounds: world.mode.rounds,
     roundTime: world.roundTime,
@@ -21,7 +22,9 @@ export function buildSnapshot(world: World, fx: FxEvent[]): Snapshot {
       name: p.name,
       c: p.colorHex,
       ci: p.colorIndex,
+      tm: p.teamId,
       s: p.score,
+      lv: p.lives,
       cl: p.cluster.length,
       al: p.alive,
       bot: p.isBot,
@@ -48,6 +51,7 @@ export function buildSnapshot(world: World, fx: FxEvent[]): Snapshot {
     })),
     goals: world.goals.map((g) => ({
       id: g.ownerId,
+      tm: g.teamId,
       c: g.colorHex,
       a: g.angle,
       x: round2(g.pos.x),

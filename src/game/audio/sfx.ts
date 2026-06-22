@@ -1,12 +1,22 @@
 import type { FxEvent } from "../data/types";
 
 /**
- * Tiny synthesized sound engine — zero audio assets, all WebAudio.
+ * Hybrid sound engine: generated SFX samples when available, synth fallback always.
  * Lazily created on first user gesture (browser autoplay policy).
  */
 // Suno-generated arcade music bed (instrumental). Falls back to the synth
 // arpeggio if the file fails to load.
 const MUSIC_URL = "./audio/music.mp3";
+const SAMPLE_URLS = {
+  pickup: "./audio/sfx/pickup.mp3",
+  bank: "./audio/sfx/bank.mp3",
+  hit: "./audio/sfx/hit.mp3",
+  shockPulse: "./audio/sfx/shock-pulse.mp3",
+  magnetBurst: "./audio/sfx/magnet-burst.mp3",
+  fall: "./audio/sfx/fall.mp3",
+} as const;
+
+type SampleName = keyof typeof SAMPLE_URLS;
 
 class SfxEngine {
   private ctx: AudioContext | null = null;
@@ -17,6 +27,8 @@ class SfxEngine {
   private musicStep = 0;
   private musicEl: HTMLAudioElement | null = null;
   private realMusic = false;
+  private samplesStarted = false;
+  private sampleBuffers: Partial<Record<SampleName, AudioBuffer>> = {};
 
   setEnabled(on: boolean) {
     this.enabled = on;
@@ -25,6 +37,7 @@ class SfxEngine {
   }
 
   ensure() {
+    if (!this.enabled) return;
     if (this.ctx) {
       if (this.ctx.state === "suspended") void this.ctx.resume();
       this.startMusic();
@@ -40,6 +53,7 @@ class SfxEngine {
     this.musicGain.gain.value = 0.16;
     this.musicGain.connect(this.master);
     this.startMusic();
+    void this.preloadSamples();
   }
 
   /** Lazy-load the looping music track (needs a prior user gesture). */
@@ -60,6 +74,38 @@ class SfxEngine {
     });
     this.musicEl = el;
     void el.play().catch(() => undefined);
+  }
+
+  private async preloadSamples() {
+    if (!this.ctx || this.samplesStarted) return;
+    this.samplesStarted = true;
+    await Promise.all(
+      Object.entries(SAMPLE_URLS).map(async ([name, url]) => {
+        try {
+          const res = await fetch(url);
+          if (!res.ok) return;
+          const bytes = await res.arrayBuffer();
+          this.sampleBuffers[name as SampleName] = await this.ctx!.decodeAudioData(bytes);
+        } catch {
+          // Samples are polish, not a dependency. Synth playback remains available.
+        }
+      })
+    );
+  }
+
+  private sample(name: SampleName, gain = 0.35, rate = 1) {
+    if (!this.ctx || !this.master || !this.enabled) return false;
+    const buffer = this.sampleBuffers[name];
+    if (!buffer) return false;
+    const src = this.ctx.createBufferSource();
+    const g = this.ctx.createGain();
+    src.buffer = buffer;
+    src.playbackRate.value = rate;
+    g.gain.value = gain;
+    src.connect(g);
+    g.connect(this.master);
+    src.start(this.ctx.currentTime);
+    return true;
   }
 
   private blip(
@@ -110,20 +156,27 @@ class SfxEngine {
     if (!this.ctx) return;
     switch (ev.kind) {
       case "pickup":
-        this.blip(520 + Math.random() * 120, 0.09, "triangle", 0.18, 900);
+        if (!this.sample("pickup", 0.28, 0.96 + Math.random() * 0.08)) {
+          this.blip(520 + Math.random() * 120, 0.09, "triangle", 0.18, 900);
+        }
         break;
       case "bank":
+        this.sample("bank", ev.big ? 0.62 : 0.42, ev.big ? 0.92 : 1.04);
         this.blip(ev.big ? 440 : 660, 0.16, "square", 0.22, ev.big ? 1320 : 990);
         this.blip(880, 0.12, "sine", 0.12, 1760);
         break;
       case "hit":
-        this.noise(0.12, 0.3, 500);
-        this.blip(160, 0.1, "sawtooth", 0.18, 60);
+        if (!this.sample("hit", 0.36, 0.92 + Math.random() * 0.16)) {
+          this.noise(0.12, 0.3, 500);
+          this.blip(160, 0.1, "sawtooth", 0.18, 60);
+        }
         break;
       case "steal":
+        this.sample("shockPulse", 0.34, 1.12);
         this.blip(300, 0.18, "sawtooth", 0.2, 720);
         break;
       case "knockoff":
+        this.sample("fall", 0.48, 0.9);
         this.noise(0.3, 0.35, 300);
         this.blip(220, 0.3, "sawtooth", 0.22, 40);
         break;
@@ -132,10 +185,13 @@ class SfxEngine {
         this.blip(560, 0.25, "triangle", 0.16, 1800);
         break;
       case "powerup":
+        if (ev.type === "shockPulse") this.sample("shockPulse", 0.48);
+        else if (ev.type === "magnetBurst") this.sample("magnetBurst", 0.48);
+        else if (ev.type === "heavyCore") this.sample("hit", 0.28, 0.72);
         this.blip(660, 0.18, "square", 0.18, 1320);
         break;
       case "fall":
-        this.blip(400, 0.4, "sine", 0.2, 60);
+        if (!this.sample("fall", 0.45)) this.blip(400, 0.4, "sine", 0.2, 60);
         break;
     }
   }
