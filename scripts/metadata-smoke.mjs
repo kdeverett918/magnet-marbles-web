@@ -61,6 +61,9 @@ async function existingAsset(href, label, expected = {}) {
   const path = publicPath(href);
   const info = await stat(path);
   if (info.size <= 0) throw new Error(`${label} is empty: ${path}`);
+  if (expected.minBytes && info.size < expected.minBytes) {
+    throw new Error(`${label} is suspiciously small: ${info.size} bytes`);
+  }
   const asset = { label, href, path, bytes: info.size };
   if (expected.type === "image/png") {
     asset.dimensions = await pngDimensions(path, label);
@@ -70,9 +73,15 @@ async function existingAsset(href, label, expected = {}) {
     if (expected.height && asset.dimensions.height !== expected.height) {
       throw new Error(`${label} height must be ${expected.height}, got ${asset.dimensions.height}`);
     }
-    if (expected.minBytes && info.size < expected.minBytes) {
-      throw new Error(`${label} is suspiciously small: ${info.size} bytes`);
-    }
+  }
+  return asset;
+}
+
+async function existingTextAsset(href, label, requiredText = [], expected = {}) {
+  const asset = await existingAsset(href, label, expected);
+  const source = await readFile(asset.path, "utf8");
+  for (const text of requiredText) {
+    if (!source.includes(text)) throw new Error(`${label} must include '${text}'`);
   }
   return asset;
 }
@@ -157,6 +166,16 @@ async function run() {
     await existingAsset(faviconHref, "favicon"),
     await existingAsset(appleIconHref, "apple touch icon", { type: "image/png", width: 180, height: 180, minBytes: 2000 }),
     await existingAsset(manifestHref, "manifest"),
+    await existingTextAsset("./service-worker.js", "service worker", [
+      "CACHE_PREFIX",
+      "APP_SHELL",
+      "networkFirst",
+      "cacheFirst",
+      "sameOrigin(request)",
+      "./build.json",
+      "./audio/music.mp3",
+      "./audio/sfx/pickup.mp3",
+    ], { minBytes: 1500 }),
     await existingAsset(ogImage, "social preview image", { type: "image/png", width: 1200, height: 630, minBytes: 20000 }),
     await existingLaunchPage("./privacy.html", "privacy page", [
       "local storage",

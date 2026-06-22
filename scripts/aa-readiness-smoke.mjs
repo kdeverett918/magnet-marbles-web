@@ -63,6 +63,9 @@ async function run() {
   const serverPackageJson = await json("server/package.json");
   const accessibility = await text("src/game/data/accessibility.ts");
   const app = await text("src/App.tsx");
+  const main = await text("src/main.tsx");
+  const serviceWorkerRegistration = await text("src/game/serviceWorker.ts");
+  const serviceWorker = await text("public/service-worker.js");
   const viteConfig = await text("vite.config.ts");
   const config = await text("src/game/data/config.ts");
   const feedback = await text("src/game/data/feedback.ts");
@@ -480,6 +483,43 @@ async function run() {
   ]) && gameScene.includes("haptics.play(ev)"),
   "Phone haptics are configurable and wired to touch controls plus gameplay pickup/bank/hit/steal/fall/powerup feedback");
 
+  add("mobile:pwa-app-shell-resilience", includesEvery(main, [
+    "registerServiceWorker",
+  ]) && includesEvery(serviceWorkerRegistration, [
+    "isLocalDevelopmentHost",
+    "window.location.hostname",
+    "new URL(\"service-worker.js\", window.location.href)",
+    "serviceWorker",
+    "registration.update",
+  ]) && includesEvery(serviceWorker, [
+    "CACHE_PREFIX",
+    "APP_SHELL",
+    "./build.json",
+    "./audio/music.mp3",
+    "networkFirst",
+    "cacheFirst",
+    "sameOrigin(request)",
+    "clients.claim",
+  ]) && includesEvery(await text("scripts/metadata-smoke.mjs"), [
+    "service-worker.js",
+    "networkFirst",
+    "cacheFirst",
+  ]),
+  "PWA service worker skips local development hosts, caches the app shell/SFX, keeps build metadata network-first, and is enforced by metadata smoke");
+
+  const distJsForServiceWorker = await Promise.all(
+    (await walk("dist", (path) => extname(path).toLowerCase() === ".js"))
+      .map(async (path) => ({ path, source: await text(path) }))
+  );
+  const distRegistration = distJsForServiceWorker.find(({ source }) => includesEvery(source, [
+    "service-worker.js",
+    "navigator.serviceWorker.register",
+  ]));
+  add("mobile:dist-registers-service-worker", !!distRegistration,
+    distRegistration
+      ? `Production bundle registers the service worker from ${distRegistration.path}`
+      : "Production bundle is missing service-worker registration; run npm run build and inspect dist/assets");
+
   add("visual:game-juice-hooks", includesEvery(gameScene, [
     "MagnetTethers",
     "Particles",
@@ -627,6 +667,9 @@ async function run() {
     ".mp3",
     "TEXT_EXTENSIONS",
   ]) && includesEvery(sourceFingerprintSmoke, [
+    "src/vite-env.d.ts",
+    "src/game/serviceWorker.ts",
+    "public/service-worker.js",
     "public/audio/sfx/pickup.mp3",
     "public/icons/icon-512.png",
     "public/social-card.png",
@@ -702,6 +745,7 @@ async function run() {
 
   const launchFiles = [
     await fileExists("public/manifest.webmanifest", 500),
+    await fileExists("public/service-worker.js", 1_500),
     await fileExists("public/privacy.html", 1_000),
     await fileExists("public/support.html", 1_000),
     await fileExists("public/icons/icon-192.png", 10_000),

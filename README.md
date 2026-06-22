@@ -85,9 +85,9 @@ installing both web and server dependencies, then uploads the generated
 `icons:generate` rebuilds the procedural mobile install icons and social card in
 `public/`. `build-info:smoke` verifies `dist/build.json` and the built JS bundle
 carry matching commit/branch/source-fingerprint provenance. `source:fingerprint`
-verifies the fingerprint includes code, config, generated launch art, and shipped
-SFX binary assets. `metadata:smoke` verifies install/share metadata plus the shipped
-privacy and support pages. `ip:safety` verifies the shipped public/dist launch
+verifies the fingerprint includes code, config, generated launch art, the app-shell
+service worker, and shipped SFX binary assets. `metadata:smoke` verifies install/share
+metadata, the service worker, plus the shipped privacy and support pages. `ip:safety` verifies the shipped public/dist launch
 surface does not publish protected reference-game names. `dist:budget` verifies production payload budgets and
 rejects dev-client/source-map leakage. `browser:guard` verifies, without
 launching Chrome, that Chrome/CDP smoke tests require explicit
@@ -173,7 +173,10 @@ then run `npm run release:verify`; it writes
 `outputs/release-readiness.json` and fails if either public service is stale.
 GitHub Actions also includes a scheduled/manual Deploy Monitor workflow that runs
 the same browser-free live monitor and uploads `outputs/`.
-The production build also ships `build.json`, `privacy.html`, and `support.html`.
+The production build also ships `build.json`, `service-worker.js`, `privacy.html`,
+and `support.html`. The service worker is a progressive-enhancement app shell:
+documents and `build.json` stay network-first, while hashed assets/icons/SFX are
+cache-first for mobile resilience after first load.
 
 ## Tuning
 All gameplay feel lives in `src/game/data/config.ts`. Change values there, not in the sim.
