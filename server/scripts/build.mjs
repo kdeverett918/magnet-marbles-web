@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import fingerprintModule from "../../scripts/lib/source-fingerprint.cjs";
 
-const { sourceFingerprintSync } = fingerprintModule;
+const { fingerprintFiles, sourceFingerprintSync } = fingerprintModule;
 const here = dirname(fileURLToPath(import.meta.url));
 const serverRoot = resolve(here, "..");
 const repoRoot = resolve(serverRoot, "..");
@@ -23,6 +23,7 @@ function commandOutput(command, args, fallback) {
   }
 }
 
+const sourceFingerprintOverride = process.env.MM_SOURCE_FINGERPRINT;
 const buildInfo = {
   name: "magnet-marbles-server",
   version: "1.0.0",
@@ -30,7 +31,9 @@ const buildInfo = {
   branch: process.env.RENDER_GIT_BRANCH || process.env.GIT_BRANCH || commandOutput("git", ["branch", "--show-current"], "unknown"),
   dirty: process.env.RENDER ? false : commandOutput("git", ["status", "--short"], "").length > 0,
   builtAt: process.env.BUILD_TIME || process.env.RENDER_DEPLOY_CREATED_AT || new Date().toISOString(),
-  sourceFingerprint: process.env.MM_SOURCE_FINGERPRINT || sourceFingerprintSync(repoRoot),
+  sourceFingerprint: sourceFingerprintOverride || sourceFingerprintSync(repoRoot),
+  sourceFingerprintSource: sourceFingerprintOverride ? "env:MM_SOURCE_FINGERPRINT" : "computed",
+  sourceFingerprintFileCount: sourceFingerprintOverride ? 0 : fingerprintFiles(repoRoot).length,
 };
 
 await build({

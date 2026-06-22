@@ -6,6 +6,8 @@ export interface BuildInfo {
   dirty: boolean;
   builtAt: string;
   sourceFingerprint: string;
+  sourceFingerprintSource?: string;
+  sourceFingerprintFileCount?: number;
 }
 
 declare const __MM_BUILD_INFO__: BuildInfo;

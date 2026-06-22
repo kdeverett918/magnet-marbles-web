@@ -13,6 +13,8 @@ declare const __MM_SERVER_BUILD_INFO__: {
   dirty: boolean;
   builtAt: string;
   sourceFingerprint: string;
+  sourceFingerprintSource: string;
+  sourceFingerprintFileCount: number;
 };
 
 const port = Number(process.env.PORT) || 2567;
@@ -24,6 +26,8 @@ const fallbackBuildInfo = {
   dirty: false,
   builtAt: process.env.BUILD_TIME || process.env.RENDER_DEPLOY_CREATED_AT || "runtime",
   sourceFingerprint: process.env.MM_SOURCE_FINGERPRINT || "unknown",
+  sourceFingerprintSource: process.env.MM_SOURCE_FINGERPRINT ? "env:MM_SOURCE_FINGERPRINT" : "runtime-fallback",
+  sourceFingerprintFileCount: 0,
 };
 const buildInfo = typeof __MM_SERVER_BUILD_INFO__ === "undefined" ? fallbackBuildInfo : __MM_SERVER_BUILD_INFO__;
 

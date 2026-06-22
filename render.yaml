@@ -12,7 +12,7 @@ services:
     # Production multiplayer must stay warm; free-tier cold starts break the
     # first-join feel and online smoke reliability.
     plan: starter
-    buildCommand: npm install && npm run build
+    buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /health
     autoDeploy: true

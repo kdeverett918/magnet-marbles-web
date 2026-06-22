@@ -4,7 +4,8 @@ import { execSync } from "node:child_process";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { sourceFingerprintSync } = require("./scripts/lib/source-fingerprint.cjs") as {
+const { fingerprintFiles, sourceFingerprintSync } = require("./scripts/lib/source-fingerprint.cjs") as {
+  fingerprintFiles: () => string[];
   sourceFingerprintSync: () => string;
 };
 
@@ -20,6 +21,7 @@ const commit = process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || comman
 const branch = process.env.RENDER_GIT_BRANCH || process.env.GIT_BRANCH || commandOrFallback("git branch --show-current", "unknown");
 const dirty = process.env.RENDER ? false : commandOrFallback("git status --short", "").length > 0;
 const builtAt = process.env.BUILD_TIME || new Date().toISOString();
+const sourceFingerprintOverride = process.env.MM_SOURCE_FINGERPRINT;
 const buildInfo = {
   name: "magnet-marbles-web",
   version: "1.0.0",
@@ -27,7 +29,9 @@ const buildInfo = {
   branch,
   dirty,
   builtAt,
-  sourceFingerprint: process.env.MM_SOURCE_FINGERPRINT || sourceFingerprintSync(),
+  sourceFingerprint: sourceFingerprintOverride || sourceFingerprintSync(),
+  sourceFingerprintSource: sourceFingerprintOverride ? "env:MM_SOURCE_FINGERPRINT" : "computed",
+  sourceFingerprintFileCount: sourceFingerprintOverride ? 0 : fingerprintFiles().length,
 };
 
 // Magnet Marbles web build. Static SPA, deployed to Render as a static site.

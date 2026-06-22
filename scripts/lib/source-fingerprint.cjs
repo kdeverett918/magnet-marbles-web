@@ -52,6 +52,10 @@ const TEXT_EXTENSIONS = new Set([
 ]);
 const EXCLUDED_DIR_NAMES = new Set(["dist", "node_modules", "outputs"]);
 
+function comparePath(a, b) {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 function hasMarkers(dir) {
   return ROOT_MARKERS.every((marker) => existsSync(join(dir, marker)));
 }
@@ -74,7 +78,7 @@ function extensionOf(path) {
 
 function walk(root, dir, files) {
   if (!existsSync(dir)) return;
-  const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+  const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => comparePath(a.name, b.name));
   for (const entry of entries) {
     const path = join(dir, entry.name);
     const rel = relative(root, path).split("\\").join("/");
@@ -94,7 +98,7 @@ function fingerprintFiles(root = findRepoRoot()) {
   for (const dir of INCLUDED_DIRS) {
     walk(root, join(root, dir), files);
   }
-  return [...new Set(files)].sort();
+  return [...new Set(files)].sort(comparePath);
 }
 
 function sourceFingerprintSync(root = findRepoRoot()) {
@@ -123,4 +127,5 @@ module.exports = {
   INCLUDED_DIRS,
   INCLUDED_EXTENSIONS,
   TEXT_EXTENSIONS,
+  comparePath,
 };
