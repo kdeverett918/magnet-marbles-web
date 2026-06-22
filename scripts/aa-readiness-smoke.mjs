@@ -625,16 +625,24 @@ async function run() {
     "source fingerprint is not deterministic",
   ]) && includesEvery(viteConfig, [
     "sourceFingerprintSync",
+    "MM_SOURCE_FINGERPRINT",
     "sourceFingerprint",
-  ]) && includesEvery(serverIndex, [
+  ]) && !viteConfig.includes("process.env.SOURCE_FINGERPRINT")
+    && includesEvery(serverIndex, [
     "__MM_SERVER_BUILD_INFO__",
+    "MM_SOURCE_FINGERPRINT",
     "sourceFingerprint",
-  ]) && serverPackageJson.scripts?.build === "node scripts/build.mjs"
+  ]) && !serverIndex.includes("process.env.SOURCE_FINGERPRINT")
+    && serverPackageJson.scripts?.build === "node scripts/build.mjs"
     && includesEvery(serverBuild, [
       "sourceFingerprintSync",
       "__MM_SERVER_BUILD_INFO__",
+      "MM_SOURCE_FINGERPRINT",
       "sourceFingerprint",
     ])
+    && !serverBuild.includes("process.env.SOURCE_FINGERPRINT")
+    && noBrowser.includes("MM_SOURCE_FINGERPRINT")
+    && launchCheck.includes("MM_SOURCE_FINGERPRINT")
     && includesEvery(buildInfoSmoke, [
       "BUILD_INFO_EXPECT_SOURCE_FINGERPRINT",
       "sourceFingerprint",

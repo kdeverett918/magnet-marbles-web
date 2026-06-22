@@ -265,7 +265,7 @@ async function ensureLocalGameServer() {
       GIT_COMMIT: EXPECT_BUILD_COMMIT,
       GIT_BRANCH: EXPECT_BUILD_BRANCH,
       BUILD_TIME,
-      SOURCE_FINGERPRINT: EXPECT_SOURCE_FINGERPRINT,
+      MM_SOURCE_FINGERPRINT: EXPECT_SOURCE_FINGERPRINT,
     },
   });
   await waitUntil("local game server", async () => {

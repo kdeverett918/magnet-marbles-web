@@ -199,7 +199,7 @@ async function ensureLocalOnlineServer() {
       GIT_COMMIT: commit,
       GIT_BRANCH: branch,
       BUILD_TIME: new Date().toISOString(),
-      SOURCE_FINGERPRINT: expectedSourceFingerprint,
+      MM_SOURCE_FINGERPRINT: expectedSourceFingerprint,
     },
   });
   return waitForHealth(endpoint, commit, expectedSourceFingerprint);

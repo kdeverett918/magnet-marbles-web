@@ -23,7 +23,7 @@ const fallbackBuildInfo = {
   branch: process.env.RENDER_GIT_BRANCH || process.env.GIT_BRANCH || "unknown",
   dirty: false,
   builtAt: process.env.BUILD_TIME || process.env.RENDER_DEPLOY_CREATED_AT || "runtime",
-  sourceFingerprint: process.env.SOURCE_FINGERPRINT || "unknown",
+  sourceFingerprint: process.env.MM_SOURCE_FINGERPRINT || "unknown",
 };
 const buildInfo = typeof __MM_SERVER_BUILD_INFO__ === "undefined" ? fallbackBuildInfo : __MM_SERVER_BUILD_INFO__;
 

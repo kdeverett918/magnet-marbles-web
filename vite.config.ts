@@ -27,7 +27,7 @@ const buildInfo = {
   branch,
   dirty,
   builtAt,
-  sourceFingerprint: process.env.SOURCE_FINGERPRINT || sourceFingerprintSync(),
+  sourceFingerprint: process.env.MM_SOURCE_FINGERPRINT || sourceFingerprintSync(),
 };
 
 // Magnet Marbles web build. Static SPA, deployed to Render as a static site.

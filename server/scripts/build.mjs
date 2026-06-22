@@ -30,7 +30,7 @@ const buildInfo = {
   branch: process.env.RENDER_GIT_BRANCH || process.env.GIT_BRANCH || commandOutput("git", ["branch", "--show-current"], "unknown"),
   dirty: process.env.RENDER ? false : commandOutput("git", ["status", "--short"], "").length > 0,
   builtAt: process.env.BUILD_TIME || process.env.RENDER_DEPLOY_CREATED_AT || new Date().toISOString(),
-  sourceFingerprint: process.env.SOURCE_FINGERPRINT || sourceFingerprintSync(repoRoot),
+  sourceFingerprint: process.env.MM_SOURCE_FINGERPRINT || sourceFingerprintSync(repoRoot),
 };
 
 await build({
