@@ -230,8 +230,8 @@ export const CONFIG = {
     fov: 42,
     fitMargin: 6.5, // extra world units beyond the rim kept in frame
     tiltLerp: 0.08, // (legacy) per-frame factor; superseded by `smooth`
-    smooth: 6, // exponential follow rate (1/s) — frame-rate-independent: k = 1 - exp(-smooth*dt)
-    parallax: 0.04, // very slight drift toward the human; NOT a tight follow
+    smooth: 8, // exponential follow rate (1/s) — frame-rate-independent: k = 1 - exp(-smooth*dt)
+    parallax: 0, // static, table-centered view (no drift) — the whole board is framed
   },
 
   // --- Counts ---

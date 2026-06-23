@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Environment, Lightformer } from "@react-three/drei";
-import { EffectComposer, Bloom, Vignette, DepthOfField, Noise } from "@react-three/postprocessing";
+import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { CONFIG } from "../data/config";
 import { getWorld, useGame, type Hud, type TutorialStep } from "../store";
@@ -207,8 +207,9 @@ export function GameScene() {
   if (!world) return null;
   const mobileViewport = typeof window !== "undefined" &&
     (window.innerWidth <= 760 || (window.matchMedia?.("(pointer: coarse)")?.matches ?? false));
-  const lite = quality === "lite";
-  const maxDpr = quality === "high" ? (mobileViewport ? 1.5 : 2) : 1;
+  // crisper render: DPR 1 on a hi-DPI phone reads as "low resolution". Give lite
+  // a 1.5 floor and high a 2 cap (R3F still clamps to the device's actual DPR).
+  const maxDpr = quality === "high" ? 2 : 1.5;
   const shadowsEnabled = quality === "high" && !mobileViewport;
   const shadowMapSize: [number, number] = mobileViewport ? [768, 768] : [1024, 1024];
 
@@ -217,7 +218,7 @@ export function GameScene() {
       shadows={shadowsEnabled}
       dpr={[1, maxDpr]}
       camera={{ fov: CONFIG.camera.fov, position: [0, CONFIG.camera.height, CONFIG.camera.distance], near: 0.5, far: 200 }}
-      gl={{ antialias: !lite || !mobileViewport, powerPreference: "high-performance" }}
+      gl={{ antialias: true, powerPreference: "high-performance" }}
       onCreated={({ gl, scene }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 1.15;
@@ -269,12 +270,12 @@ export function GameScene() {
       {quality === "high" && !reducedMotion && !mobileViewport && <AmbientMotes />}
 
       {quality === "high" && (
-        <EffectComposer multisampling={mobileViewport ? 0 : 4} enableNormalPass={false}>
-          {/* gentle gallery depth-of-field: play disc stays sharp, surrounds soften */}
-          <DepthOfField target={[0, 0, 0]} focalLength={0.01} bokehScale={1.8} height={480} />
-          <Bloom intensity={0.5} luminanceThreshold={0.7} luminanceSmoothing={0.3} mipmapBlur radius={0.6} />
-          <Vignette eskil={false} offset={0.32} darkness={0.5} />
-          <Noise opacity={0.03} premultiply />
+        // Sharp, full-resolution post. No depth-of-field (it softened the whole
+        // play area and rendered at a low internal res = blurry). Just a touch of
+        // bloom on bright highlights + a vignette.
+        <EffectComposer multisampling={mobileViewport ? 2 : 4} enableNormalPass={false}>
+          <Bloom intensity={0.4} luminanceThreshold={0.8} luminanceSmoothing={0.25} mipmapBlur radius={0.5} />
+          <Vignette eskil={false} offset={0.3} darkness={0.45} />
         </EffectComposer>
       )}
     </Canvas>
