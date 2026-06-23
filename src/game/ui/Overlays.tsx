@@ -2,9 +2,13 @@ import { useEffect, useRef } from "react";
 import { useGame, getWorld } from "../store";
 import { rankPlayersForResults } from "../data/results";
 import { resetInput } from "../input/controls";
-import { BOT_DIFFICULTIES, type BotDifficulty } from "../data/config";
+import { BOT_DIFFICULTIES, BOT_PERSONALITIES, type BotDifficulty } from "../data/config";
 import { playerMarker } from "../data/identity";
 import { MOTION_MODES, type MotionMode } from "../data/accessibility";
+import { introBriefFor, masteryBadgeFor, resultRecapFor } from "./hudModel";
+import { nextUnlockFor } from "../data/progression";
+import { sfx } from "../audio/sfx";
+import { haptics } from "../haptics/haptics";
 
 export function Overlays() {
   const hud = useGame((s) => s.hud);
@@ -16,6 +20,7 @@ export function Overlays() {
   const online = useGame((s) => s.online);
   const paused = useGame((s) => s.paused);
   const settings = useGame((s) => s.settings);
+  const progression = useGame((s) => s.progression);
   const modeId = useGame((s) => s.modeId);
   const playerCount = useGame((s) => s.playerCount);
   const runId = useGame((s) => s.runId);
@@ -27,10 +32,22 @@ export function Overlays() {
   const setMotion = useGame((s) => s.setMotion);
   const setQuality = useGame((s) => s.setQuality);
   const setBotDifficulty = useGame((s) => s.setBotDifficulty);
+  const unlockTrail = useGame((s) => s.unlockTrail);
   const pauseResumeRef = useRef<HTMLButtonElement | null>(null);
   const prePauseFocusRef = useRef<HTMLElement | null>(null);
   const wasPauseDialogOpen = useRef(false);
   const pauseDialogOpen = paused && !online && (hud.phase === "intro" || hud.phase === "playing");
+  const previewSfx = () => {
+    sfx.setEnabled(settings.sound);
+    sfx.setVolume(settings.sfxVolume);
+    haptics.setEnabled(settings.haptics);
+    haptics.tap("press");
+    if (settings.sound) sfx.preview();
+  };
+  const previewHaptics = () => {
+    haptics.setEnabled(settings.haptics);
+    if (settings.haptics) haptics.preview();
+  };
 
   useEffect(() => {
     if (hud.phase === "matchEnd") claimMatchReward(hud);
@@ -95,11 +112,29 @@ export function Overlays() {
             </label>
             <button
               type="button"
+              className="chip test-sfx-chip"
+              aria-label="Play a short sound effect at the current SFX volume"
+              onClick={previewSfx}
+              disabled={!settings.sound}
+            >
+              Test SFX
+            </button>
+            <button
+              type="button"
               className={`chip ${settings.haptics ? "active" : ""}`}
               aria-pressed={settings.haptics}
               onClick={toggleHaptics}
             >
               {settings.haptics ? "Haptics on" : "Haptics off"}
+            </button>
+            <button
+              type="button"
+              className="chip test-haptics-chip"
+              aria-label="Play a short phone vibration preview"
+              onClick={previewHaptics}
+              disabled={!settings.haptics}
+            >
+              Test Haptics
             </button>
             <button
               type="button"
@@ -161,11 +196,25 @@ export function Overlays() {
 
   if (hud.phase === "intro") {
     const c = Math.ceil(hud.introCountdown);
+    const brief = introBriefFor(hud);
     return (
-      <div className="overlay" style={{ background: "transparent", backdropFilter: "none" }}>
+      <div className="overlay intro-overlay" style={{ background: "transparent", backdropFilter: "none" }}>
         <div className={`countdown ${c <= 0 ? "go" : ""}`}>{c <= 0 ? "GO!" : c}</div>
-        <div className="round-label">
-          {hud.totalRounds > 1 ? `Round ${hud.round} of ${hud.totalRounds}` : "Get ready"}
+        <div className="intro-brief" style={{ ["--player-color" as any]: brief.playerColor }}>
+          <div className="intro-brief-head">
+            <span className="section-label">{brief.eyebrow}</span>
+            <strong>{brief.title}</strong>
+          </div>
+          <p>{brief.detail}</p>
+          <div className="intro-steps" aria-label="Round plan">
+            {brief.steps.map((step, index) => (
+              <span key={step.label}>
+                <b>{index + 1}</b>
+                <em>{step.label}</em>
+                <small>{step.detail}</small>
+              </span>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -176,6 +225,10 @@ export function Overlays() {
     const ranked = rankPlayersForResults(hud.modeKind, hud.players, hud.winnerId);
     const winner = ranked.find((entry) => entry.isWinner)?.player ?? ranked[0]?.player;
     const humanResult = ranked.find((entry) => entry.player.id === hud.humanId);
+    const recap = resultRecapFor(hud);
+    const earnedReward = isMatch && !online && lastReward?.runId === runId ? lastReward : null;
+    const masteryBadge = masteryBadgeFor(hud, earnedReward);
+    const nextUnlock = nextUnlockFor(progression);
     const youWon = isMatch && Boolean(humanResult?.isWinner);
     const winnerCopy = hud.modeKind === "team-bank" && humanResult?.isWinner
       ? "Your Team"
@@ -209,19 +262,74 @@ export function Overlays() {
                 <span className="rank">{placement}</span>
                 <span className="dot" style={{ background: p.colorHex, color: p.colorHex }} />
                 {settings.colorAssist && <span className="standing-marker">{playerMarker(p)}</span>}
-                <span className="nm">{p.id === hud.humanId ? "You" : p.name}{p.isBot ? " 🤖" : ""}</span>
+                <span className="nm">
+                  {p.id === hud.humanId ? "You" : p.name}{p.isBot ? " 🤖" : ""}
+                  {p.isBot && p.botPersonality && <span className="standing-role">{BOT_PERSONALITIES[p.botPersonality].short}</span>}
+                </span>
                 <span className="sc">{hud.modeKind === "survival" ? `${p.lives}L` : resultScore}</span>
               </div>
             ))}
           </div>
 
-          {isMatch && !online && lastReward?.runId === runId && (
+          {recap && (
+            <div
+              className={`result-recap ${recap.tone}`}
+              aria-label={`${recap.eyebrow}: ${recap.title}. ${recap.detail}. Tip: ${recap.tip}`}
+            >
+              <div>
+                <span className="section-label">{recap.eyebrow}</span>
+                <strong>{recap.title}</strong>
+              </div>
+              <p>{recap.detail}</p>
+              <small>{recap.tip}</small>
+            </div>
+          )}
+
+          {masteryBadge && (
+            <div
+              className={`mastery-badge ${masteryBadge.tone}`}
+              aria-label={`${masteryBadge.label}: ${masteryBadge.title}. ${masteryBadge.detail}.`}
+            >
+              <span className="section-label">{masteryBadge.label}</span>
+              <strong>{masteryBadge.title}</strong>
+              <small>{masteryBadge.detail}</small>
+            </div>
+          )}
+
+          {earnedReward && (
             <div className="reward-strip" aria-label="Stars earned">
               <div>
                 <span className="section-label">Reward</span>
-                <strong>+{lastReward.stars}★</strong>
+                <strong>+{earnedReward.stars}★</strong>
               </div>
-              <p>{lastReward.reasons.join(" · ")}</p>
+              <p>{earnedReward.reasons.join(" · ")}</p>
+              <small className={`record-reward-target ${earnedReward.record.isNewBest ? "new-best" : ""}`}>
+                {earnedReward.record.isNewBest
+                  ? `New ${hud.modeName} best: ${earnedReward.record.bestScore}`
+                  : `${hud.modeName} best: ${earnedReward.record.bestScore} · ${earnedReward.record.wins} wins / ${earnedReward.record.matches} played`}
+              </small>
+              {earnedReward.dailyStreak && (
+                <small className="daily-streak-target">
+                  Daily streak: {earnedReward.dailyStreak.current} day{earnedReward.dailyStreak.current === 1 ? "" : "s"} · best {earnedReward.dailyStreak.best}
+                </small>
+              )}
+              <small className="next-reward-target">
+                {nextUnlock
+                  ? nextUnlock.ready
+                    ? "Cosmetic ready now"
+                    : `Next unlock: ${nextUnlock.trail.name} · ${nextUnlock.starsNeeded}★ left`
+                  : "Cosmetic collection complete"}
+              </small>
+              {nextUnlock?.ready && (
+                <button
+                  type="button"
+                  className="unlock-reward-button"
+                  aria-label={`Unlock and equip ${nextUnlock.trail.name}`}
+                  onClick={() => unlockTrail(nextUnlock.trail.id)}
+                >
+                  Unlock & Equip {nextUnlock.trail.name}
+                </button>
+              )}
             </div>
           )}
 

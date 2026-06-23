@@ -14,6 +14,8 @@ export function cameraImpulseForEvent(ev: FxEvent) {
       return 0;
     case "bank":
       return ev.big ? 0.46 : 0.24;
+    case "bankStreak":
+      return 0.28 + ev.bonus * 0.08;
     case "hit":
       return 0.18;
     case "steal":

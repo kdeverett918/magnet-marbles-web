@@ -225,6 +225,12 @@ async function run() {
   try {
     await step("web:test", () => npmRun("test"));
     await step("web:vertical-slice", () => npmRun("vertical:slice"));
+    await step("web:sim-soak", () => npmRun("sim:soak", {
+      SIM_SOAK_OUTPUT: "outputs/sim-soak-no-browser.json",
+    }));
+    await step("web:sim-performance", () => npmRun("sim:perf", {
+      SIM_PERFORMANCE_OUTPUT: "outputs/sim-performance-smoke-no-browser.json",
+    }));
     await step("web:lint", () => npmRun("lint"));
     await step("web:audit", () => npmRoot(["audit"]));
     await step("web:build", () => npmRun("build"));
@@ -252,6 +258,12 @@ async function run() {
     await step("web:assets-smoke", () => npmRun("assets:smoke", {
       ASSETS_OUTPUT: "outputs/assets-smoke-no-browser.json",
     }));
+    await step("web:a11y-static-smoke", () => npmRun("a11y:static", {
+      A11Y_STATIC_OUTPUT: "outputs/a11y-static-smoke-no-browser.json",
+    }));
+    await step("web:mobile-layout-static-smoke", () => npmRun("mobile:layout", {
+      MOBILE_LAYOUT_STATIC_OUTPUT: "outputs/mobile-layout-static-smoke-no-browser.json",
+    }));
     await step("web:aa-readiness-smoke", () => npmRun("aa:readiness", {
       AA_READINESS_OUTPUT: "outputs/aa-readiness-smoke-no-browser.json",
     }));
@@ -259,7 +271,26 @@ async function run() {
     await step("web:clean-exit-smoke", () => npmRun("clean-exit:smoke", {
       CLEAN_EXIT_OUTPUT: "outputs/clean-exit-smoke-no-browser.json",
     }));
+    await step("web:evidence-templates", () => npmRun("evidence:templates", {
+      EVIDENCE_TEMPLATE_OUTPUT_DIR: "outputs/evidence-templates",
+    }));
+    await step("web:evidence-negative-smoke", () => npmRun("evidence:negative", {
+      EVIDENCE_TEMPLATE_OUTPUT_DIR: "outputs/evidence-templates",
+      EVIDENCE_NEGATIVE_OUTPUT: "outputs/evidence-negative-smoke-no-browser.json",
+    }));
+    await step("web:device-qa-smoke", () => npmRun("device:qa", {
+      DEVICE_QA_OUTPUT: "outputs/device-qa-smoke-no-browser.json",
+    }));
+    await step("web:hosting-config-smoke", () => npmRun("hosting:smoke", {
+      HOSTING_OUTPUT: "outputs/hosting-config-smoke-no-browser.json",
+    }));
+    await step("web:human-review-smoke", () => npmRun("human:review", {
+      HUMAN_AA_REVIEW_OUTPUT: "outputs/human-aa-review-smoke-no-browser.json",
+    }));
     await step("server:build", () => npmServer(["run", "build"]));
+    await step("server:nanoid-compat-smoke", () => npmRun("nanoid:smoke", {
+      NANOID_COMPAT_OUTPUT: "outputs/nanoid-compat-smoke-no-browser.json",
+    }));
     await step("server:audit", () => npmServer(["audit"]));
     await step("ensure:local-online-server", async () => {
       onlineServer = await ensureLocalOnlineServer();

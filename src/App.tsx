@@ -7,6 +7,7 @@ import { Controls } from "./game/ui/Controls";
 import { Overlays } from "./game/ui/Overlays";
 import { installKeyboard, resetInput } from "./game/input/controls";
 import { sfx } from "./game/audio/sfx";
+import { installNoMusicGuard } from "./game/audio/noMusic";
 import { haptics } from "./game/haptics/haptics";
 
 export function App() {
@@ -19,6 +20,7 @@ export function App() {
   const togglePaused = useGame((s) => s.togglePaused);
 
   useEffect(() => {
+    installNoMusicGuard();
     sfx.setEnabled(sound);
     sfx.setVolume(sfxVolume);
     haptics.setEnabled(hapticsOn);

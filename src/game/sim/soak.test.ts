@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { CONFIG, MODES } from "../data/config";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { ALL_GAMEPLAY_POWERUPS, CONFIG, MODES } from "../data/config";
 import type { Marble, Player, RoundPhase } from "../data/types";
 import { makeWorld, type World } from "./world";
 
@@ -8,6 +10,13 @@ const SOAK_SECONDS = 180;
 const SOAK_STEPS = Math.round(SOAK_SECONDS / DT);
 const SEEDS = [20260622, 918273, 440044];
 const PHASES: RoundPhase[] = ["intro", "playing", "roundEnd", "matchEnd"];
+const SOAK_OUTPUT = process.env.SIM_SOAK_OUTPUT;
+
+function writeSoakReport(report: unknown) {
+  if (!SOAK_OUTPUT) return;
+  mkdirSync(dirname(SOAK_OUTPUT), { recursive: true });
+  writeFileSync(SOAK_OUTPUT, JSON.stringify(report, null, 2));
+}
 
 function expectFinite(value: number, label: string) {
   expect(Number.isFinite(value), label).toBe(true);
@@ -87,7 +96,7 @@ function expectWorldIntegrity(world: World) {
     expectFinite(pickup.pos.z, `pickup ${pickup.id} pos.z`);
     expectFinite(pickup.respawnTimer, `pickup ${pickup.id} respawnTimer`);
     expectFinite(pickup.bob, `pickup ${pickup.id} bob`);
-    expect(["magnetBurst", "shockPulse", "heavyCore"]).toContain(pickup.type);
+    expect(ALL_GAMEPLAY_POWERUPS).toContain(pickup.type);
   }
 
   for (const button of world.buttons) {
@@ -185,10 +194,12 @@ describe("Long deterministic simulation soak", () => {
       pickups: 0,
       hits: 0,
     };
+    const runs: Array<ReturnType<typeof runSoak> & { modeId: string; seed: number }> = [];
 
     for (const mode of MODES) {
       for (const seed of SEEDS) {
         const stats = runSoak(mode.id, seed);
+        runs.push({ modeId: mode.id, seed, ...stats });
         aggregate.modeRuns++;
         aggregate.matchEnds += stats.matchEndSeen ? 1 : 0;
         aggregate.banks += stats.bankFx;
@@ -202,5 +213,19 @@ describe("Long deterministic simulation soak", () => {
     expect(aggregate.banks).toBeGreaterThan(0);
     expect(aggregate.pickups).toBeGreaterThan(0);
     expect(aggregate.hits).toBeGreaterThan(0);
+
+    writeSoakReport({
+      pass: true,
+      capturedAt: new Date().toISOString(),
+      browserAutomation: false,
+      modes: MODES.map((mode) => mode.id),
+      seeds: SEEDS,
+      secondsPerRun: SOAK_SECONDS,
+      stepsPerRun: SOAK_STEPS,
+      totalSimSeconds: aggregate.modeRuns * SOAK_SECONDS,
+      totalSteps: aggregate.modeRuns * SOAK_STEPS,
+      aggregate,
+      runs,
+    });
   }, 20_000);
 });

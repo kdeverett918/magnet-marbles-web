@@ -101,6 +101,9 @@ export const Particles = forwardRef<ParticlesHandle>(function Particles(_props, 
         case "bank":
           spawn(ev.big ? 30 : 16, ev.x, 0.6, ev.z, ev.color, 5, 8, 0.9, 0.16, -9, true);
           break;
+        case "bankStreak":
+          spawn(18 + ev.bonus * 8, ev.x, 0.75, ev.z, ev.color, 6 + ev.bonus, 8, 0.85, 0.16, -8, true);
+          break;
         case "hit":
           spawn(12, ev.x, 0.4, ev.z, "#fff0c0", 6, 4, 0.4, 0.1, -10);
           break;

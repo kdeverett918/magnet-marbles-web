@@ -37,6 +37,11 @@ export interface Marble {
   vel: Vec2;
   y: number; // height above table; 0 = on table, <0 = falling off
   vy: number; // vertical velocity while falling
+  // render-interpolation: position at the start of the most recent fixed step
+  // (World only; renderer lerps prev->pos by world.renderAlpha to kill stutter)
+  px?: number;
+  pz?: number;
+  py?: number;
   radius: number;
   colorHex: string;
   value: number; // 1 normal, 5 jumbo
@@ -55,6 +60,7 @@ export interface Marble {
 }
 
 export type BotState = "search" | "collect" | "bank" | "attack" | "recover";
+export type BotPersonalityId = "collector" | "bruiser" | "banker";
 
 export interface Player {
   id: number;
@@ -67,6 +73,10 @@ export interface Player {
   vel: Vec2;
   y: number;
   vy: number;
+  // render-interpolation previous position (World only; see Marble.px)
+  px?: number;
+  pz?: number;
+  py?: number;
   radius: number;
   score: number;
   lives: number;
@@ -75,6 +85,8 @@ export interface Player {
   // input intent (set by controls/bot each step), normalized direction + magnitude
   moveX: number;
   moveZ: number;
+  lastMoveX: number;
+  lastMoveZ: number;
   wantMagnet: boolean;
   wantDash: boolean;
   wantActivate: boolean; // press to activate held powerup
@@ -82,8 +94,14 @@ export interface Player {
   magnetActive: boolean;
   dashCooldown: number;
   dashTimer: number; // active dash duration remaining
+  dashDirX: number;
+  dashDirZ: number;
   // carry
   cluster: number[]; // marble ids
+  // banking mastery
+  bankStreak: number; // quick consecutive bank runs, 1..bank.streakMax
+  bankStreakUntil: number; // sim-time expiry for the current streak window
+  bankRunActive: boolean; // true while this player is draining the current haul
   // powerups
   heldPowerup: PowerupType | null;
   activeUntil: Partial<Record<PowerupType, number>>; // sim-time expiry
@@ -91,6 +109,7 @@ export interface Player {
   goalAngle: number; // radians around the rim
   // bot
   botState: BotState;
+  botPersonality: BotPersonalityId | null;
   botTimer: number;
   botTargetMarble: number;
   botTargetPlayer: number;
@@ -156,6 +175,7 @@ export type FxEvent =
   | { kind: "pickup"; x: number; z: number; color: string }
   | { kind: "cluster"; x: number; z: number; color: string; count: number }
   | { kind: "bank"; x: number; z: number; color: string; big: boolean }
+  | { kind: "bankStreak"; x: number; z: number; color: string; streak: number; bonus: number }
   | { kind: "hit"; x: number; z: number }
   | { kind: "steal"; x: number; z: number; color: string }
   | { kind: "knockoff"; x: number; z: number }

@@ -28,6 +28,9 @@ const MAX_LOCAL_REPORT_AGE_HOURS = Number(process.env.RELEASE_MAX_LOCAL_REPORT_A
 const REQUIRE_CLEAN = process.env.RELEASE_ALLOW_DIRTY !== "1";
 const REQUIRE_METADATA = process.env.RELEASE_REQUIRE_METADATA !== "0";
 const REQUIRE_MOBILE_PERF = process.env.RELEASE_REQUIRE_MOBILE_PERF !== "0";
+const REQUIRE_DEVICE_QA = process.env.RELEASE_REQUIRE_DEVICE_QA !== "0";
+const REQUIRE_HOSTING_CONFIG = process.env.RELEASE_REQUIRE_HOSTING_CONFIG !== "0";
+const REQUIRE_HUMAN_REVIEW = process.env.RELEASE_REQUIRE_HUMAN_REVIEW !== "0";
 const SKIP_LIVE = process.env.RELEASE_SKIP_LIVE === "1";
 const CDP_PORT = Number(process.env.RELEASE_CDP_PORT || process.env.MM_CDP_PORT || DEFAULT_CDP_PORT);
 const EXPECT_SOURCE_FINGERPRINT = process.env.RELEASE_EXPECT_SOURCE_FINGERPRINT || fingerprintModule.sourceFingerprintSync();
@@ -305,6 +308,116 @@ async function localReportStatus(blockers) {
   }
 }
 
+async function deviceQaStatus(blockers) {
+  const status = {
+    required: REQUIRE_DEVICE_QA,
+    output: "outputs/release-device-qa-smoke.json",
+  };
+  const result = await runNodeScript("scripts/device-qa-smoke.mjs", {
+    DEVICE_QA_REQUIRE_EVIDENCE: REQUIRE_DEVICE_QA ? "1" : "0",
+    DEVICE_QA_EXPECT_COMMIT: commandOutput("git", ["rev-parse", "--short=12", "HEAD"], "unknown"),
+    DEVICE_QA_EXPECT_SOURCE_FINGERPRINT: EXPECT_SOURCE_FINGERPRINT,
+    DEVICE_QA_OUTPUT: status.output,
+  });
+  status.pass = result.pass;
+  status.elapsedMs = result.elapsedMs;
+  status.code = result.code;
+  try {
+    const report = await readJson(status.output);
+    status.report = {
+      pass: report.pass === true,
+      requireEvidence: report.requireEvidence === true,
+      evidenceFound: report.evidence?.found === true,
+      blockerCount: Array.isArray(report.blockers) ? report.blockers.length : 0,
+      warningCount: Array.isArray(report.warnings) ? report.warnings.length : 0,
+    };
+    status.blockers = Array.isArray(report.blockers)
+      ? report.blockers.map((blocker) => blocker.message || String(blocker)).filter(Boolean)
+      : [];
+  } catch {
+    status.blockers = [];
+  }
+  if (!result.pass) {
+    const reason = status.blockers.length > 0 ? status.blockers.join("; ") : failureText(result);
+    status.error = reason;
+    blockers.push(`Device QA evidence failed: ${reason}`);
+  }
+  return status;
+}
+
+async function hostingConfigStatus(blockers) {
+  const status = {
+    required: REQUIRE_HOSTING_CONFIG,
+    output: "outputs/release-hosting-config-smoke.json",
+  };
+  const result = await runNodeScript("scripts/hosting-config-smoke.mjs", {
+    HOSTING_REQUIRE_LIVE_CONFIG: REQUIRE_HOSTING_CONFIG ? "1" : "0",
+    HOSTING_OUTPUT: status.output,
+  });
+  status.pass = result.pass;
+  status.elapsedMs = result.elapsedMs;
+  status.code = result.code;
+  try {
+    const report = await readJson(status.output);
+    status.report = {
+      pass: report.pass === true,
+      requireLiveConfig: report.requireLiveConfig === true,
+      liveChecked: report.live?.checked === true,
+      blockerCount: Array.isArray(report.blockers) ? report.blockers.length : 0,
+      warningCount: Array.isArray(report.warnings) ? report.warnings.length : 0,
+    };
+    status.blockers = Array.isArray(report.blockers)
+      ? report.blockers.map((blocker) => blocker.message || String(blocker)).filter(Boolean)
+      : [];
+  } catch {
+    status.blockers = [];
+  }
+  if (!result.pass) {
+    const reason = status.blockers.length > 0 ? status.blockers.join("; ") : failureText(result);
+    status.error = reason;
+    blockers.push(`Hosting config failed: ${reason}`);
+  }
+  return status;
+}
+
+async function humanReviewStatus(blockers) {
+  const status = {
+    required: REQUIRE_HUMAN_REVIEW,
+    output: "outputs/release-human-aa-review-smoke.json",
+  };
+  const result = await runNodeScript("scripts/human-review-smoke.mjs", {
+    HUMAN_AA_REVIEW_REQUIRE_EVIDENCE: REQUIRE_HUMAN_REVIEW ? "1" : "0",
+    HUMAN_AA_REVIEW_EXPECT_COMMIT: commandOutput("git", ["rev-parse", "--short=12", "HEAD"], "unknown"),
+    HUMAN_AA_REVIEW_EXPECT_SOURCE_FINGERPRINT: EXPECT_SOURCE_FINGERPRINT,
+    HUMAN_AA_REVIEW_OUTPUT: status.output,
+  });
+  status.pass = result.pass;
+  status.elapsedMs = result.elapsedMs;
+  status.code = result.code;
+  try {
+    const report = await readJson(status.output);
+    status.report = {
+      pass: report.pass === true,
+      requireEvidence: report.requireEvidence === true,
+      evidenceFound: report.evidence?.found === true,
+      shipDecision: report.evidence?.shipDecision ?? null,
+      blockerCount: Array.isArray(report.blockers) ? report.blockers.length : 0,
+      warningCount: Array.isArray(report.warnings) ? report.warnings.length : 0,
+    };
+    status.blockers = Array.isArray(report.blockers)
+      ? report.blockers.map((blocker) => blocker.message || String(blocker)).filter(Boolean)
+      : [];
+  } catch {
+    status.blockers = [];
+  }
+  if (!result.pass) {
+    const reason = status.blockers.length > 0 ? status.blockers.join("; ") : failureText(result);
+    status.error = reason;
+    blockers.push(`Human AA review evidence failed: ${reason}`);
+  }
+  return status;
+}
+
 async function runLiveChecks(commit, blockers) {
   if (SKIP_LIVE) return { skipped: true, steps: [] };
 
@@ -432,6 +545,9 @@ async function run() {
   }
 
   const localReport = await localReportStatus(blockers);
+  const deviceQa = await deviceQaStatus(blockers);
+  const hostingConfig = await hostingConfigStatus(blockers);
+  const humanReview = await humanReviewStatus(blockers);
   const live = await runLiveChecks(commit, blockers);
   const report = {
     pass: blockers.length === 0,
@@ -444,6 +560,9 @@ async function run() {
       requireClean: REQUIRE_CLEAN,
       requireMetadata: REQUIRE_METADATA,
       requireMobilePerf: REQUIRE_MOBILE_PERF,
+      requireDeviceQa: REQUIRE_DEVICE_QA,
+      requireHostingConfig: REQUIRE_HOSTING_CONFIG,
+      requireHumanReview: REQUIRE_HUMAN_REVIEW,
       maxLocalReportAgeHours: MAX_LOCAL_REPORT_AGE_HOURS,
       skipLive: SKIP_LIVE,
     },
@@ -452,6 +571,9 @@ async function run() {
       server: LIVE_SERVER_URL,
     },
     localReport,
+    deviceQa,
+    hostingConfig,
+    humanReview,
     live,
     blockers,
   };

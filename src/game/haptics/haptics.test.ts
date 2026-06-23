@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hapticPatternForEvent } from "./haptics";
+import { HAPTIC_PREVIEW_PATTERN, hapticPatternForEvent } from "./haptics";
 
 describe("hapticPatternForEvent", () => {
   it("maps frequent collection feedback to short phone-safe pulses", () => {
@@ -20,5 +20,9 @@ describe("hapticPatternForEvent", () => {
     expect(hapticPatternForEvent({ kind: "powerup", x: 0, z: 0, type: "magnetBurst" })).toEqual([10, 18, 12]);
     expect(hapticPatternForEvent({ kind: "powerup", x: 0, z: 0, type: "shockPulse" })).toEqual([10, 16, 24]);
     expect(hapticPatternForEvent({ kind: "powerup", x: 0, z: 0, type: "heavyCore" })).toEqual([18, 22, 18]);
+  });
+
+  it("provides a distinct phone-safe haptic preview pattern", () => {
+    expect(HAPTIC_PREVIEW_PATTERN).toEqual([8, 18, 12, 30, 18]);
   });
 });

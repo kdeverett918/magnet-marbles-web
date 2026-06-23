@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { makeWorld, type World } from "./world";
-import { BOT_DIFFICULTIES, CONFIG, MODES } from "../data/config";
+import {
+  ADVANCED_POWERUPS,
+  ALL_GAMEPLAY_POWERUPS,
+  BOT_DIFFICULTIES,
+  BOT_PERSONALITIES,
+  CONFIG,
+  CORE_POWERUPS,
+  MID_MATCH_POWERUPS,
+  MODES,
+} from "../data/config";
 import { buildSnapshot } from "../net/snapshot";
 import { NetView } from "../net/NetView";
 
@@ -20,11 +29,11 @@ function stageCarriedMarble(world: World, playerId: number) {
   stageCarriedMarbles(world, playerId, 1);
 }
 
-function stageCarriedMarbles(world: World, playerId: number, count: number, painted = false) {
+function stageCarriedMarbles(world: World, playerId: number, count: number, painted = false, start = 0) {
   const player = world.players[playerId];
   player.cluster = [];
   for (let i = 0; i < count; i++) {
-    const marble = world.marbles[i];
+    const marble = world.marbles[start + i];
     marble.state = "carried";
     marble.carrier = playerId;
     marble.value = 1;
@@ -50,6 +59,25 @@ function marbleSignature(world: World) {
 
 function expectFiniteNumber(value: number, label: string) {
   expect(Number.isFinite(value), label).toBe(true);
+}
+
+function sustainedMoveSpeedWithCluster(clusterCount: number): number {
+  const world = startPlaying(false);
+  for (const p of world.players) p.isBot = false;
+  const human = world.players[world.humanId];
+  for (const marble of world.marbles) {
+    marble.state = "dead";
+    marble.carrier = -1;
+    marble.deadTimer = 999;
+  }
+  if (clusterCount > 0) stageCarriedMarbles(world, human.id, clusterCount);
+  human.pos = { x: 0, z: 0 };
+  human.vel = { x: 0, z: 0 };
+
+  world.setInput(human.id, { moveX: 1, moveZ: 0, magnet: false, dash: false, activate: false });
+  advance(world, 0.65);
+
+  return Math.hypot(human.vel.x, human.vel.z);
 }
 
 function assertWorldIntegrity(world: World) {
@@ -144,12 +172,33 @@ describe("World launch-critical mechanics", () => {
     expect(MODES.map((mode) => mode.id)).toEqual(["classic", "battle", "king-magnet", "team-bank", "survival"]);
   });
 
-  it("spawns only the three vertical-slice powerups during normal play", () => {
+  it("spawns only the three vertical-slice powerups in the first round", () => {
     const world = startPlaying(false);
 
-    expect(world.pickups.map((pickup) => pickup.type).every((type) => (
-      type === "magnetBurst" || type === "shockPulse" || type === "heavyCore"
-    ))).toBe(true);
+    expect(world.pickups.map((pickup) => pickup.type).every((type) => CORE_POWERUPS.includes(type))).toBe(true);
+  });
+
+  it("ramps richer powerup pools in later rounds", () => {
+    const world = makeWorld("classic", 4, 54321);
+    world.startMatch();
+
+    world.round = 2;
+    world.startRound();
+    expect(world.pickups.map((pickup) => pickup.type).every((type) => MID_MATCH_POWERUPS.includes(type))).toBe(true);
+
+    const seenAdvanced = new Set<string>();
+    for (let seed = 1; seed <= 160; seed++) {
+      const seeded = makeWorld("classic", 4, seed);
+      seeded.startMatch();
+      seeded.round = 3;
+      seeded.startRound();
+
+      for (const pickup of seeded.pickups) {
+        expect(ALL_GAMEPLAY_POWERUPS).toContain(pickup.type);
+        if (ADVANCED_POWERUPS.includes(pickup.type)) seenAdvanced.add(pickup.type);
+      }
+    }
+    expect([...seenAdvanced].sort()).toEqual([...ADVANCED_POWERUPS].sort());
   });
 
   it("spawns deterministic marble layouts for the same seed", () => {
@@ -343,6 +392,39 @@ describe("World launch-critical mechanics", () => {
     expect(human.cluster).toHaveLength(0);
   });
 
+  it("rewards fast repeat bank runs with a short-lived streak bonus", () => {
+    const world = startPlaying(false);
+    for (const p of world.players) p.isBot = false;
+    const human = world.players[world.humanId];
+
+    stageCarriedMarbles(world, human.id, 2);
+    world.tick(0.1);
+
+    expect(human.score).toBe(2);
+    expect(human.bankStreak).toBe(1);
+    expect(human.cluster).toHaveLength(0);
+
+    stageCarriedMarbles(world, human.id, 2);
+    world.tick(0.1);
+
+    expect(human.score).toBe(6);
+    expect(human.bankStreak).toBe(2);
+    expect(world.drainFx()).toContainEqual(expect.objectContaining({
+      kind: "bankStreak",
+      streak: 2,
+      bonus: 1,
+    }));
+
+    advance(world, CONFIG.bank.streakWindow + 0.2);
+    expect(human.bankStreak).toBe(0);
+
+    stageCarriedMarbles(world, human.id, 2);
+    world.tick(0.1);
+
+    expect(human.score).toBe(8);
+    expect(human.bankStreak).toBe(1);
+  });
+
   it("magnet burst activates as a short stronger pull buff", () => {
     const world = startPlaying(false);
     for (const p of world.players) p.isBot = false;
@@ -419,6 +501,16 @@ describe("World launch-critical mechanics", () => {
     expect(fx.filter((ev) => ev.kind === "cluster").map((ev) => ev.count)).toEqual([3, 6]);
   });
 
+  it("slightly slows full carried hauls while preserving responsive control", () => {
+    const emptySpeed = sustainedMoveSpeedWithCluster(0);
+    const fullHaulSpeed = sustainedMoveSpeedWithCluster(CONFIG.magnet.clusterCap);
+
+    expect(CONFIG.carry.speedPenaltyPerMarble).toBeGreaterThan(0);
+    expect(CONFIG.carry.minSpeedMultiplier).toBeGreaterThanOrEqual(0.75);
+    expect(fullHaulSpeed).toBeLessThan(emptySpeed * 0.86);
+    expect(fullHaulSpeed).toBeGreaterThan(emptySpeed * 0.72);
+  });
+
   it("treats dash as a one-frame press gated by cooldown", () => {
     const world = startPlaying(false);
     for (const p of world.players) p.isBot = false;
@@ -445,6 +537,43 @@ describe("World launch-critical mechanics", () => {
     expect(human.dashTimer).toBeLessThanOrEqual(0);
     expect(human.dashCooldown).toBeGreaterThan(0);
     expect(human.dashCooldown).toBeLessThan(firstCooldown);
+  });
+
+  it("dashes from neutral using the last movement direction", () => {
+    const world = startPlaying(false);
+    for (const p of world.players) p.isBot = false;
+    const human = world.players[0];
+    human.pos = { x: 0, z: 0 };
+    human.vel = { x: 0, z: 0 };
+
+    world.setInput(human.id, { moveX: 1, moveZ: 0, magnet: false, dash: false, activate: false });
+    world.tick(0.08);
+    expect(human.lastMoveX).toBeGreaterThan(0.99);
+    expect(human.lastMoveZ).toBeCloseTo(0);
+
+    world.setInput(human.id, { moveX: 0, moveZ: 0, magnet: false, dash: true, activate: false });
+    world.tick(0.04);
+
+    expect(human.dashTimer).toBeGreaterThan(0);
+    expect(human.dashCooldown).toBeGreaterThan(CONFIG.player.dashDuration);
+    expect(human.dashDirX).toBeGreaterThan(0.99);
+    expect(human.vel.x).toBeGreaterThan(0);
+  });
+
+  it("does not spend dash cooldown when no direction has ever been given", () => {
+    const world = startPlaying(false);
+    for (const p of world.players) p.isBot = false;
+    const human = world.players[0];
+    human.pos = { x: 0, z: 0 };
+    human.vel = { x: 0, z: 0 };
+
+    world.setInput(human.id, { moveX: 0, moveZ: 0, magnet: false, dash: true, activate: false });
+    world.tick(0.04);
+
+    expect(human.dashTimer).toBe(0);
+    expect(human.dashCooldown).toBe(0);
+    expect(human.dashDirX).toBe(0);
+    expect(human.dashDirZ).toBe(0);
   });
 
   it("sanitizes malformed player input before it can corrupt physics", () => {
@@ -567,6 +696,8 @@ describe("World launch-critical mechanics", () => {
     stageCarriedMarbles(world, 0, 2);
     world.players[0].heldPowerup = "paint";
     world.players[0].activeUntil.turbo = world.time + 3;
+    world.players[0].bankStreak = 2;
+    world.players[0].bankStreakUntil = world.time + 4;
     world.tick(0.04);
 
     const snapshot = buildSnapshot(world, world.drainFx());
@@ -579,6 +710,10 @@ describe("World launch-critical mechanics", () => {
     expect(view.players[0].cluster).toHaveLength(snapshot.players[0].cl);
     expect(view.players[0].heldPowerup).toBe("paint");
     expect(view.players[0].activeUntil.turbo).toBeGreaterThan(view.time);
+    expect(view.players[0].bankStreak).toBe(2);
+    expect(view.players[0].bankStreakUntil).toBeGreaterThan(view.time);
+    expect(snapshot.players.slice(1).map((player) => player.bp)).toEqual(["collector", "bruiser", "banker"]);
+    expect(view.players[1].botPersonality).toBe("collector");
     expect(view.marbles).toHaveLength(snapshot.marbles.length);
     expect(view.goals).toHaveLength(snapshot.goals.length);
     expect(view.buttons).toHaveLength(snapshot.buttons.length);
@@ -647,7 +782,7 @@ describe("World launch-critical mechanics", () => {
     for (const p of world.players) p.isBot = false;
     const bot = world.players[1];
     bot.isBot = true;
-    stageCarriedMarbles(world, bot.id, CONFIG.bot.bankWhenCluster);
+    stageCarriedMarbles(world, bot.id, BOT_PERSONALITIES.collector.bankWhenCluster);
     bot.pos = { x: 0, z: 0 };
     bot.vel = { x: 0, z: 0 };
     bot.botTimer = 0;
@@ -658,6 +793,30 @@ describe("World launch-critical mechanics", () => {
     expect(bot.botState).toBe("bank");
     expect(bot.wantMagnet).toBe(true);
     expect(bot.moveX * toGoal.x + bot.moveZ * toGoal.z).toBeGreaterThan(0);
+  });
+
+  it("uses bot personalities to vary banking risk and pressure", () => {
+    const world = startPlaying(false);
+    const collector = world.players[1];
+    const bruiser = world.players[2];
+    const banker = world.players[3];
+    const bankerThreshold = BOT_PERSONALITIES.banker.bankWhenCluster;
+
+    stageCarriedMarbles(world, collector.id, bankerThreshold, false, 0);
+    stageCarriedMarbles(world, bruiser.id, bankerThreshold, false, 8);
+    stageCarriedMarbles(world, banker.id, bankerThreshold, false, 16);
+    for (const bot of [collector, bruiser, banker]) {
+      bot.pos = { x: 0, z: 0 };
+      bot.vel = { x: 0, z: 0 };
+      bot.botTimer = 0;
+    }
+
+    world.tick(0.04);
+
+    expect([collector.botPersonality, bruiser.botPersonality, banker.botPersonality]).toEqual(["collector", "bruiser", "banker"]);
+    expect(collector.botState).not.toBe("bank");
+    expect(banker.botState).toBe("bank");
+    expect(BOT_PERSONALITIES.bruiser.attackMult).toBeGreaterThan(BOT_PERSONALITIES.collector.attackMult);
   });
 
   it("uses bot difficulty to tune retarget cadence and movement pressure", () => {

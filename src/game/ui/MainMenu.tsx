@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useGame } from "../store";
-import { BOT_DIFFICULTIES, MODES, POWERUP_META, type BotDifficulty } from "../data/config";
-import { TRAIL_COSMETICS } from "../data/progression";
+import { ADVANCED_POWERUPS, BOT_DIFFICULTIES, BOT_PERSONALITIES, CORE_POWERUPS, MODES, POWERUP_META, type BotDifficulty } from "../data/config";
+import type { PowerupType } from "../data/types";
+import { TRAIL_COSMETICS, dailyStreakFor, modeRecordFor, nextUnlockFor } from "../data/progression";
 import { MOTION_MODES, type MotionMode } from "../data/accessibility";
 import { sfx } from "../audio/sfx";
 import { haptics } from "../haptics/haptics";
 import { MenuBackground } from "../scene/MenuBackground";
+import { BUILD_INFO } from "../buildInfo";
 
 const MARBLES_COLORS = ["#ff4a4a", "#35a5ff", "#50d56d", "#ffd04a", "#27e0e0", "#ff4dd2", "#9cff3d"];
 const MODE_ACCENTS: Record<string, { color: string; mark: string; stat: string }> = {
@@ -15,7 +17,6 @@ const MODE_ACCENTS: Record<string, { color: string; mark: string; stat: string }
   "team-bank": { color: "#4dcc66", mark: "2V2", stat: "shared score" },
   survival: { color: "#56d0ff", mark: "3L", stat: "last up" },
 };
-const POWERUP_TRIO = ["magnetBurst", "shockPulse", "heavyCore"] as const;
 
 function Letters({ word, colors }: { word: string; colors: string[] }) {
   return (
@@ -25,6 +26,21 @@ function Letters({ word, colors }: { word: string; colors: string[] }) {
           {ch}
         </span>
       ))}
+    </span>
+  );
+}
+
+function PowerupChip({ type, compact = false }: { type: PowerupType; compact?: boolean }) {
+  const meta = POWERUP_META[type];
+  return (
+    <span
+      className="power-chip"
+      aria-label={`${meta.label}: ${meta.desc}`}
+      title={`${meta.label}: ${meta.desc}`}
+      style={{ ["--p" as any]: meta.color }}
+    >
+      <i aria-hidden />
+      {compact ? meta.short : meta.label}
     </span>
   );
 }
@@ -59,12 +75,14 @@ export function MainMenu() {
     setMotion,
     setQuality,
     setBotDifficulty,
+    clearLocalData,
     unlockTrail,
     selectTrail,
   } =
     useGame();
   const [showRoom, setShowRoom] = useState(false);
   const [roomCode, setRoomCode] = useState("");
+  const [confirmReset, setConfirmReset] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
 
   const prime = () => {
@@ -88,13 +106,39 @@ export function MainMenu() {
     prime();
     startDailyChallenge();
   };
+  const previewSfx = () => {
+    sfx.setEnabled(settings.sound);
+    sfx.setVolume(settings.sfxVolume);
+    haptics.setEnabled(settings.haptics);
+    haptics.tap("press");
+    if (settings.sound) sfx.preview();
+  };
+  const previewHaptics = () => {
+    haptics.setEnabled(settings.haptics);
+    if (settings.haptics) haptics.preview();
+  };
+  const resetLocalData = () => {
+    haptics.setEnabled(settings.haptics);
+    haptics.tap("press");
+    if (!confirmReset) {
+      setConfirmReset(true);
+      return;
+    }
+    clearLocalData();
+    setConfirmReset(false);
+  };
   const connecting = net.status === "connecting";
   const elapsed = connecting && net.startedAt > 0 ? Math.max(0, Math.floor((clock - net.startedAt) / 1000)) : 0;
   const hasRoomCode = roomCode.trim().length > 0;
   const onlineStatus = onlineStatusText(net.status, net.error, elapsed, hasRoomCode);
   const selectedMode = MODES.find((m) => m.id === modeId) ?? MODES[0];
   const selectedAccent = MODE_ACCENTS[selectedMode.id] ?? MODE_ACCENTS.classic;
+  const selectedRecord = modeRecordFor(progression, selectedMode.id);
   const dailyDone = progression.dailyCompleted.includes(dailyChallenge.id);
+  const dailyStreak = dailyStreakFor(progression, dailyChallenge);
+  const nextUnlock = nextUnlockFor(progression);
+  const candidateCommit = BUILD_INFO.commit.slice(0, 8);
+  const candidateFingerprint = BUILD_INFO.sourceFingerprint.slice(0, 8);
 
   useEffect(() => {
     if (!connecting) return;
@@ -102,6 +146,12 @@ export function MainMenu() {
     const id = window.setInterval(() => setClock(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [connecting, net.startedAt]);
+
+  useEffect(() => {
+    if (!confirmReset) return;
+    const id = window.setTimeout(() => setConfirmReset(false), 5000);
+    return () => window.clearTimeout(id);
+  }, [confirmReset]);
 
   return (
     <div className="menu">
@@ -163,13 +213,28 @@ export function MainMenu() {
               <span><b>{selectedMode.duration}s</b> timer</span>
               <span><b>{selectedMode.rounds}</b> {selectedMode.rounds === 1 ? "round" : "rounds"}</span>
             </div>
-            <div className="power-strip" aria-label="Powerups">
-              {POWERUP_TRIO.map((type) => (
-                <span key={type} style={{ ["--p" as any]: POWERUP_META[type].color }}>
-                  <i />
-                  {POWERUP_META[type].label}
-                </span>
-              ))}
+            <div className="record-strip" aria-label={`${selectedMode.name} local record`}>
+              <span><b>{selectedRecord.bestScore}</b><small>best</small></span>
+              <span><b>{selectedRecord.wins}</b><small>wins</small></span>
+              <span><b>{selectedRecord.matches}</b><small>played</small></span>
+            </div>
+            <div className="power-strip" aria-label="Powerup ramp">
+              <div className="power-strip-stage core" aria-label="Round 1 powerups">
+                <small>Round 1</small>
+                <div className="power-chip-row">
+                  {CORE_POWERUPS.map((type) => (
+                    <PowerupChip key={type} type={type} />
+                  ))}
+                </div>
+              </div>
+              <div className="power-strip-stage advanced" aria-label="Later round powerups">
+                <small>Later rounds</small>
+                <div className="power-chip-row">
+                  {ADVANCED_POWERUPS.map((type) => (
+                    <PowerupChip key={type} type={type} compact />
+                  ))}
+                </div>
+              </div>
             </div>
             <div className="progression-strip" aria-label="Progression">
               <div className="stars-box">
@@ -180,8 +245,37 @@ export function MainMenu() {
               <button type="button" className="daily-button" onClick={playDaily} disabled={connecting}>
                 <span>{dailyDone ? "Daily cleared" : "Daily challenge"}</span>
                 <strong>{dailyChallenge.modeName}</strong>
-                <small>{dailyChallenge.target}{dailyDone ? "" : ` · +${dailyChallenge.rewardStars}★`}</small>
+                <small>
+                  {dailyDone
+                    ? `${dailyStreak.current} day streak · best ${dailyStreak.best}`
+                    : `${dailyChallenge.target} · +${dailyChallenge.rewardStars}★ · ${dailyStreak.next}d streak`}
+                </small>
               </button>
+              {nextUnlock ? (
+                <button
+                  type="button"
+                  className={`next-unlock ${nextUnlock.ready ? "ready" : ""}`}
+                  onClick={() => unlockTrail(nextUnlock.trail.id)}
+                  disabled={connecting || !nextUnlock.ready}
+                  aria-label={`Next unlock: ${nextUnlock.trail.name}. ${nextUnlock.ready ? "Unlock ready" : `${nextUnlock.starsNeeded} stars to unlock`}. ${nextUnlock.trail.finish}.`}
+                  style={{ ["--trail" as any]: nextUnlock.trail.color, ["--skin" as any]: nextUnlock.trail.skinColor, ["--accent-skin" as any]: nextUnlock.trail.skinAccent }}
+                >
+                  <i className="skin-swatch" aria-hidden><b /><em /></i>
+                  <span>
+                    <small>Next unlock</small>
+                    <strong>{nextUnlock.trail.name}</strong>
+                  </span>
+                  <em>{nextUnlock.ready ? "Ready" : `${nextUnlock.starsNeeded}★ left`}</em>
+                </button>
+              ) : (
+                <div className="next-unlock complete" aria-label="All marble skins unlocked">
+                  <span>
+                    <small>Collection</small>
+                    <strong>All skins unlocked</strong>
+                  </span>
+                  <em>Complete</em>
+                </div>
+              )}
             </div>
             <div className="cosmetic-strip" aria-label="Marble skin and trail cosmetics">
               {TRAIL_COSMETICS.map((trail) => {
@@ -214,11 +308,22 @@ export function MainMenu() {
                 <span className="section-label">Choose a mode</span>
                 <span className="panel-note">Easy to read. Hard to master.</span>
               </div>
-              <nav className="launch-links" aria-label="Launch information">
-                <a href="./privacy.html" target="_blank" rel="noreferrer">Privacy</a>
-                <span aria-hidden>·</span>
-                <a href="./support.html" target="_blank" rel="noreferrer">Support</a>
-              </nav>
+              <div className="launch-cluster">
+                <nav className="launch-links" aria-label="Launch information">
+                  <a href="./privacy.html" target="_blank" rel="noreferrer">Privacy</a>
+                  <span aria-hidden>·</span>
+                  <a href="./support.html" target="_blank" rel="noreferrer">Support</a>
+                </nav>
+                <div
+                  className="candidate-stamp"
+                  aria-label={`Candidate build ${candidateCommit}, source fingerprint ${candidateFingerprint}${BUILD_INFO.dirty ? ", dirty working tree" : ""}`}
+                  title={`Commit ${BUILD_INFO.commit} · source ${BUILD_INFO.sourceFingerprint}${BUILD_INFO.dirty ? " · dirty working tree" : ""}`}
+                >
+                  <span>Candidate</span>
+                  <b>{candidateCommit}</b>
+                  <em>{candidateFingerprint}</em>
+                </div>
+              </div>
             </div>
             <div className="play-row">
               <button type="button" className="btn primary play-btn" onClick={playSolo} disabled={connecting}>
@@ -308,6 +413,11 @@ export function MainMenu() {
                     </button>
                   ))}
                 </div>
+                <div className="bot-roster" aria-label="Bot roles">
+                  {Object.values(BOT_PERSONALITIES).map((bot) => (
+                    <span key={bot.label} title={bot.desc}>{bot.short}</span>
+                  ))}
+                </div>
               </div>
               <div>
                 <div className="section-label">Options</div>
@@ -336,12 +446,30 @@ export function MainMenu() {
                   </label>
                   <button
                     type="button"
+                    className="chip test-sfx-chip"
+                    aria-label="Play a short sound effect at the current SFX volume"
+                    onClick={previewSfx}
+                    disabled={!settings.sound || connecting}
+                  >
+                    Test SFX
+                  </button>
+                  <button
+                    type="button"
                     className={`chip icon-chip ${settings.haptics ? "active" : ""}`}
                     aria-pressed={settings.haptics}
                     aria-label={settings.haptics ? "Haptics on" : "Haptics off"}
                     onClick={toggleHaptics}
                   >
                     {settings.haptics ? "Haptics" : "Haptics off"}
+                  </button>
+                  <button
+                    type="button"
+                    className="chip test-haptics-chip"
+                    aria-label="Play a short phone vibration preview"
+                    onClick={previewHaptics}
+                    disabled={!settings.haptics || connecting}
+                  >
+                    Test Haptics
                   </button>
                   <button
                     type="button"
@@ -382,6 +510,15 @@ export function MainMenu() {
                     onClick={() => setQuality("lite")}
                   >
                     Lite
+                  </button>
+                  <button
+                    type="button"
+                    className={`chip reset-data-chip ${confirmReset ? "confirm" : ""}`}
+                    aria-label="Reset local progress, settings, tutorial, daily streak, and marble skin data"
+                    onClick={resetLocalData}
+                    disabled={connecting}
+                  >
+                    {confirmReset ? "Confirm reset" : "Reset data"}
                   </button>
                 </div>
               </div>

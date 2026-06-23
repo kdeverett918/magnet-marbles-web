@@ -3,6 +3,8 @@ import type { FxEvent } from "../data/types";
 export type HapticPattern = number | number[];
 export type TouchHaptic = "press" | "dash" | "magnet";
 
+export const HAPTIC_PREVIEW_PATTERN: HapticPattern = [8, 18, 12, 30, 18];
+
 const TOUCH_PATTERNS: Record<TouchHaptic, HapticPattern> = {
   press: 8,
   dash: [10, 18, 12],
@@ -17,6 +19,8 @@ export function hapticPatternForEvent(ev: FxEvent): HapticPattern | null {
       return ev.count >= 10 ? [9, 16, 14] : [8, 12, 8];
     case "bank":
       return ev.big ? [20, 35, 28] : [14, 26, 18];
+    case "bankStreak":
+      return ev.bonus >= 2 ? [14, 18, 14, 26, 22] : [12, 18, 16, 18];
     case "hit":
       return 18;
     case "steal":
@@ -72,6 +76,10 @@ class HapticsEngine {
     if (pattern === null) return false;
     const minGap = ev.kind === "pickup" ? 52 : 36;
     return this.pulse(pattern, minGap);
+  }
+
+  preview() {
+    return this.pulse(HAPTIC_PREVIEW_PATTERN, 80);
   }
 }
 

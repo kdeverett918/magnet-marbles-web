@@ -1,8 +1,10 @@
 import { useRef, useState } from "react";
 import { useGame } from "../store";
-import { setTouchMagnetHeld, triggerDash, triggerActivate } from "../input/controls";
+import { setTouchMagnetHeld, triggerDash, triggerActivate, setTouchMove } from "../input/controls";
 import { rightGestureShouldDash, type TouchPoint } from "../input/touchGestures";
+import { POWERUP_META } from "../data/config";
 import { PU_ICON, PU_LABEL } from "./icons";
+import { actionStatusFor } from "./hudModel";
 import { sfx } from "../audio/sfx";
 import { haptics } from "../haptics/haptics";
 
@@ -21,7 +23,10 @@ export function Controls() {
   if (!inGame) return null;
 
   const held = hud.heldPowerup;
+  const heldMeta = held ? POWERUP_META[held] : null;
   const dashReady = hud.dashCooldown <= 0;
+  const dashCooldownLabel = Math.max(1, Math.ceil(hud.dashCooldown));
+  const actionStatus = actionStatusFor(hud, magnetOn);
   const setMag = (on: boolean) => {
     setMagnetOn(on);
     setTouchMagnetHeld(on);
@@ -53,6 +58,7 @@ export function Controls() {
 
   return (
     <div className="controls">
+      <JoystickZone />
       <div
         className={`right-gesture-zone ${magnetOn ? "on" : ""}`}
         aria-hidden="true"
@@ -66,14 +72,29 @@ export function Controls() {
         </div>
       </div>
 
-      <div className="move-hint">drag to move · lower-right hold / tap dash</div>
+      <div className="move-hint">left thumb steers · right: magnet / dash / power</div>
 
       <div className="action-cluster">
+        <div className="action-status" aria-hidden="true">
+          <span className={`action-pill ${actionStatus.powerup.tone}`}>
+            <b>{actionStatus.powerup.label}</b>
+            <small>{actionStatus.powerup.detail}</small>
+          </span>
+          <span className={`action-pill ${actionStatus.dash.tone}`}>
+            <b>{actionStatus.dash.label}</b>
+            <small>{actionStatus.dash.detail}</small>
+          </span>
+          <span className={`action-pill ${actionStatus.magnet.tone}`}>
+            <b>{actionStatus.magnet.label}</b>
+            <small>{actionStatus.magnet.detail}</small>
+          </span>
+        </div>
+
         <div className="act-col">
           <button
             type="button"
             className={`act ${held ? "held" : "disabled"}`}
-            aria-label={held ? `Use ${PU_LABEL[held]}` : "No powerup ready"}
+            aria-label={heldMeta ? `Use ${heldMeta.label}: ${heldMeta.desc}` : "No powerup ready"}
             disabled={!held}
             onPointerDown={(e) => {
               e.preventDefault();
@@ -85,12 +106,12 @@ export function Controls() {
             }}
           >
             <span className="ico">{held ? PU_ICON[held] : "—"}</span>
-            <span style={{ fontSize: 9 }}>{held ? "USE" : "PWR"}</span>
+            <span className="act-label">{held ? PU_LABEL[held] : "PWR"}</span>
           </button>
           <button
             type="button"
             className={`act ${dashReady ? "" : "disabled"}`}
-            aria-label={dashReady ? "Dash" : "Dash cooling down"}
+            aria-label={dashReady ? "Dash ready" : `Dash cooling down ${dashCooldownLabel} seconds`}
             disabled={!dashReady}
             onPointerDown={(e) => {
               e.preventDefault();
@@ -100,14 +121,14 @@ export function Controls() {
             }}
           >
             <span className="ico">»</span>
-            <span style={{ fontSize: 10 }}>DASH</span>
+            <span className="act-label">{dashReady ? "DASH" : `${dashCooldownLabel}s`}</span>
           </button>
         </div>
 
         <button
           type="button"
           className={`act big ${magnetOn ? "on" : ""}`}
-          aria-label="Hold magnet"
+          aria-label={magnetOn ? "Magnet pulling" : "Hold magnet"}
           aria-pressed={magnetOn}
           onPointerDown={(e) => {
             e.preventDefault();
@@ -123,9 +144,79 @@ export function Controls() {
           onPointerCancel={() => setMag(false)}
         >
           <span className="ico">🧲</span>
-          <span style={{ fontSize: 10 }}>MAGNET</span>
+          <span className="act-label">MAGNET</span>
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Floating analog joystick on the left thumb zone. Anchors wherever the thumb
+ * lands; the marble steers toward the stick direction (screen-up = forward).
+ * Drives the shared input via setTouchMove; also works with a mouse on desktop.
+ */
+const JOY_RADIUS = 56;
+
+function JoystickZone() {
+  const origin = useRef<{ x: number; y: number } | null>(null);
+  const pid = useRef<number | null>(null);
+  const [knob, setKnob] = useState<{ ox: number; oy: number; kx: number; ky: number } | null>(null);
+
+  const onDown = (e: React.PointerEvent) => {
+    if (pid.current !== null) return;
+    e.preventDefault();
+    pid.current = e.pointerId;
+    origin.current = { x: e.clientX, y: e.clientY };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    setKnob({ ox: e.clientX, oy: e.clientY, kx: 0, ky: 0 });
+    sfx.ensure();
+  };
+  const onMove = (e: React.PointerEvent) => {
+    const o = origin.current;
+    if (pid.current !== e.pointerId || !o) return;
+    let dx = e.clientX - o.x;
+    let dy = e.clientY - o.y;
+    const d = Math.hypot(dx, dy);
+    if (d > JOY_RADIUS) {
+      dx = (dx / d) * JOY_RADIUS;
+      dy = (dy / d) * JOY_RADIUS;
+    }
+    // up (negative screen y) = forward (negative world z); right = +x
+    setTouchMove(dx / JOY_RADIUS, dy / JOY_RADIUS, true);
+    setKnob({ ox: o.x, oy: o.y, kx: dx, ky: dy });
+  };
+  const onUp = (e: React.PointerEvent) => {
+    if (pid.current !== e.pointerId) return;
+    pid.current = null;
+    origin.current = null;
+    setTouchMove(0, 0, false);
+    setKnob(null);
+  };
+
+  return (
+    <div
+      className="joystick-zone"
+      aria-hidden="true"
+      onPointerDown={onDown}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+      onPointerCancel={onUp}
+    >
+      {knob ? (
+        <div className="joystick-base" style={{ left: knob.ox, top: knob.oy }}>
+          <div className="joystick-knob" style={{ transform: `translate(${knob.kx}px, ${knob.ky}px)` }} />
+        </div>
+      ) : (
+        <div className="joystick-hint">
+          <span className="joystick-hint-ring" />
+          <span>steer</span>
+        </div>
+      )}
     </div>
   );
 }

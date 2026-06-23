@@ -32,6 +32,13 @@ export function feedbackForEvent(ev: FxEvent): FeedbackMessage | null {
         tone: "score",
         priority: ev.big ? 4 : 2,
       };
+    case "bankStreak":
+      return {
+        title: `Bank streak ${ev.streak}`,
+        detail: `Quick return: +${ev.bonus} per marble`,
+        tone: "score",
+        priority: 5,
+      };
     case "steal":
       return {
         title: "Steal",

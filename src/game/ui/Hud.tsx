@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useGame } from "../store";
 import { PU_ICON, PU_LABEL } from "./icons";
-import { POWERUP_META } from "../data/config";
-import { humanHudPlayer, objectiveAnnouncementFor, objectiveFor } from "./hudModel";
+import { BOT_PERSONALITIES, CONFIG, POWERUP_META } from "../data/config";
+import { carryAdviceFor, humanHudPlayer, objectiveAnnouncementFor, objectiveFor, raceStatusFor, rimDangerFor, tutorialCoachStepsFor } from "./hudModel";
 import { resetInput } from "../input/controls";
 import { playerMarker } from "../data/identity";
 
@@ -22,6 +22,11 @@ export function Hud() {
   const secs = Math.floor(hud.roundTime % 60);
   const objective = objectiveFor(hud, you);
   const objectiveAnnouncement = objectiveAnnouncementFor(hud, objective);
+  const coachSteps = tutorialCoachStepsFor(hud);
+  const showCoach = coachSteps.length > 0;
+  const raceStatus = raceStatusFor(hud, you);
+  const carryAdvice = carryAdviceFor(hud, you);
+  const rimDanger = rimDangerFor(hud, you);
 
   useEffect(() => {
     if (!feedback) return;
@@ -32,7 +37,7 @@ export function Hud() {
   if (!playing) return null;
 
   return (
-    <div className="hud">
+    <div className={`hud ${showCoach ? "tutorial-coach" : ""}`}>
       <div className="topbar">
         <div className="scoreboard">
           {hud.players.map((p) => (
@@ -44,6 +49,7 @@ export function Hud() {
               score={p.score}
               teamId={p.teamId}
               lives={p.lives}
+              botPersonality={p.botPersonality}
               showTeam={hud.modeKind === "team-bank"}
               showLives={hud.modeKind === "survival"}
               you={p.id === hud.humanId}
@@ -64,10 +70,39 @@ export function Hud() {
         <div style={{ width: 80 }} />
       </div>
 
-      <div className="objective-chip" aria-describedby="hud-objective-status">{objective}</div>
+      <div className="objective-chip" aria-describedby="hud-objective-status">
+        <span className="objective-text">{objective}</span>
+        {showCoach && (
+          <div className="coach-steps" aria-label="First round coach">
+            {coachSteps.map((step, index) => (
+              <span key={step.key} className={`coach-step ${step.state}`} aria-label={`${step.label}: ${step.detail}, ${step.state}`}>
+                <b>{index + 1}</b>
+                <span>{step.label}</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
       <div id="hud-objective-status" className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         {objectiveAnnouncement}
+        {raceStatus ? ` Race status: ${raceStatus.label}, ${raceStatus.detail}.` : ""}
+        {rimDanger ? ` Rim danger: ${rimDanger.label}, ${rimDanger.detail}.` : ""}
+        {showCoach ? ` First round coach: ${coachSteps.map((step) => `${step.label} ${step.state}`).join(", ")}.` : ""}
       </div>
+
+      {raceStatus && (
+        <div className={`race-chip ${raceStatus.tone}`} aria-label={`Race status: ${raceStatus.label}. ${raceStatus.detail}.`}>
+          <span>{raceStatus.label}</span>
+          <small>{raceStatus.detail}</small>
+        </div>
+      )}
+
+      {rimDanger && (
+        <div className={`rim-warning ${rimDanger.tone}`} aria-label={`Rim danger: ${rimDanger.label}. ${rimDanger.detail}.`}>
+          <span>{rimDanger.label}</span>
+          <small>{rimDanger.detail}</small>
+        </div>
+      )}
 
       {feedback && (
         <div key={feedback.id} className={`toast feedback-toast ${feedback.tone}`} role="status" aria-live="polite">
@@ -102,11 +137,27 @@ export function Hud() {
             aria-valuemin={0}
             aria-valuemax={hud.clusterCap}
             aria-valuenow={you.cluster}
-            aria-valuetext={`${you.cluster} of ${hud.clusterCap} marbles carried`}
+            aria-valuetext={`${you.cluster} of ${hud.clusterCap} marbles carried${carryAdvice ? `. ${carryAdvice.label}: ${carryAdvice.detail}` : ""}`}
           >
             <i style={{ width: `${(you.cluster / hud.clusterCap) * 100}%`, background: you.colorHex }} />
           </div>
           <div className="lbl">{you.cluster} / {hud.clusterCap} carried</div>
+          {carryAdvice && (
+            <div className={`carry-advice ${carryAdvice.tone}`} aria-label={`Carry advice: ${carryAdvice.label}. ${carryAdvice.detail}.`}>
+              <span>{carryAdvice.label}</span>
+              <small>{carryAdvice.detail}</small>
+            </div>
+          )}
+          {you.bankStreak >= 2 && you.bankStreakBonus > 0 && you.bankStreakTimeLeft > 0 && (
+            <div
+              className="bank-streak"
+              aria-label={`Bank streak ${you.bankStreak}, plus ${you.bankStreakBonus} per marble, ${Math.ceil(you.bankStreakTimeLeft)} seconds left`}
+            >
+              <span>Streak {you.bankStreak}</span>
+              <strong>+{you.bankStreakBonus}</strong>
+              <i style={{ width: `${Math.max(0, Math.min(1, you.bankStreakTimeLeft / CONFIG.bank.streakWindow)) * 100}%` }} />
+            </div>
+          )}
         </div>
       )}
 
@@ -133,6 +184,7 @@ function ScorePill({
   score,
   teamId,
   lives,
+  botPersonality,
   showTeam,
   showLives,
   you,
@@ -144,6 +196,7 @@ function ScorePill({
   score: number;
   teamId: number;
   lives: number;
+  botPersonality: keyof typeof BOT_PERSONALITIES | null;
   showTeam: boolean;
   showLives: boolean;
   you: boolean;
@@ -160,6 +213,7 @@ function ScorePill({
     }
   }, [score]);
   const marker = playerMarker(id);
+  const botRole = !you && botPersonality ? BOT_PERSONALITIES[botPersonality] : null;
   return (
     <div
       className={`score-pill ${you ? "you" : ""} ${bump ? "bump" : ""} ${colorAssist ? "assist" : ""}`}
@@ -168,7 +222,10 @@ function ScorePill({
     >
       <span className="dot" style={{ background: color, color }}>{colorAssist ? marker : ""}</span>
       <div>
-        <div className="nm">{colorAssist ? `${marker} ` : ""}{name}{showTeam ? ` T${teamId + 1}` : ""}</div>
+        <div className="nm">
+          {colorAssist ? `${marker} ` : ""}{name}{showTeam ? ` T${teamId + 1}` : ""}
+          {botRole && <span className="bot-role">{botRole.short}</span>}
+        </div>
         <div className="sc">
           {score}
           {showLives && <span className="lives">{Math.max(lives, 0)}L</span>}

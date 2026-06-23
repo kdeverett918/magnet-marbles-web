@@ -11,7 +11,13 @@ export function Marbles({ world }: { world: Arena }) {
   const count = world.marbles.length;
   const quality = useGame((s) => s.settings.quality);
   const lite = quality === "lite";
-  const showHalo = !lite;
+  // refractive glass only where there's GPU headroom (transmission costs an extra
+  // scene pass); mobile / lite get a cheaper glossy candy-glass that reads similar.
+  const mobileViewport =
+    typeof window !== "undefined" &&
+    (window.innerWidth <= 760 || (window.matchMedia?.("(pointer: coarse)")?.matches ?? false));
+  const glass = !lite && !mobileViewport;
+  const showHalo = false; // premium glass tabletop reads cleaner without additive halos
   const ref = useRef<THREE.InstancedMesh>(null);
   const halo = useRef<THREE.InstancedMesh>(null);
 
@@ -19,16 +25,30 @@ export function Marbles({ world }: { world: Arena }) {
   const haloGeo = useMemo(() => new THREE.SphereGeometry(1, 16, 12), []);
   const mat = useMemo(
     () =>
-      new THREE.MeshPhysicalMaterial({
-        roughness: 0.02,
-        metalness: 0.0,
-        clearcoat: 1.0,
-        clearcoatRoughness: 0.04,
-        iridescence: 0.5,
-        iridescenceIOR: 1.3,
-        envMapIntensity: 2.6,
-      }),
-    []
+      glass
+        ? new THREE.MeshPhysicalMaterial({
+            roughness: 0.06,
+            metalness: 0.0,
+            clearcoat: 1.0,
+            clearcoatRoughness: 0.05,
+            transmission: 0.9,
+            ior: 1.5,
+            thickness: 0.6,
+            attenuationDistance: 2.5,
+            iridescence: 0.1,
+            iridescenceIOR: 1.3,
+            envMapIntensity: 1.6,
+          })
+        : new THREE.MeshPhysicalMaterial({
+            roughness: 0.08,
+            metalness: 0.0,
+            clearcoat: 1.0,
+            clearcoatRoughness: 0.05,
+            iridescence: 0.2,
+            iridescenceIOR: 1.3,
+            envMapIntensity: 1.4,
+          }),
+    [glass]
   );
   const haloMat = useMemo(
     () =>
@@ -58,6 +78,7 @@ export function Marbles({ world }: { world: Arena }) {
     const mesh = ref.current;
     const h = showHalo ? halo.current : null;
     if (!mesh) return;
+    const a = world.renderAlpha ?? 1;
     for (let i = 0; i < count; i++) {
       const m = world.marbles[i];
       if (m.state === "dead") {
@@ -68,7 +89,15 @@ export function Marbles({ world }: { world: Arena }) {
         h?.setMatrixAt(i, dummy.matrix);
         continue;
       }
-      dummy.position.set(m.pos.x, m.y + m.radius, m.pos.z);
+      // render-interpolate between the previous fixed-step pos and the current
+      // one; snap (skip lerp) on teleports/respawns to avoid streaking.
+      const px = m.px ?? m.pos.x, pz = m.pz ?? m.pos.z, py = m.py ?? m.y;
+      const ddx = m.pos.x - px, ddz = m.pos.z - pz;
+      const jumped = ddx * ddx + ddz * ddz > 9;
+      const rx = jumped ? m.pos.x : px + ddx * a;
+      const rz = jumped ? m.pos.z : pz + ddz * a;
+      const ry = jumped ? m.y : py + (m.y - py) * a;
+      dummy.position.set(rx, ry + m.radius, rz);
       dummy.rotation.set(m.spin * 0.6, m.spin, 0);
       dummy.scale.setScalar(m.radius);
       dummy.updateMatrix();

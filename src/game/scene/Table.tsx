@@ -1,21 +1,26 @@
 import { useMemo } from "react";
-import * as THREE from "three";
 import { CONFIG } from "../data/config";
 import type { Arena } from "../sim/arena";
-import { getStoneTextures } from "./textures";
 
 const R = CONFIG.tableRadius;
-const GOLD = "#d4af52";
+const BRASS = "#caa45a";
+const FELT = "#1f6b43";
+const WALNUT = "#3c2715";
 
-function goldMat(emissive = 0.25) {
+function brassMat(emissive = 0.04) {
   return (
-    <meshStandardMaterial color={GOLD} emissive={"#6e521c"} emissiveIntensity={emissive} roughness={0.22} metalness={1.0} />
+    <meshStandardMaterial color={BRASS} emissive={BRASS} emissiveIntensity={emissive} roughness={0.28} metalness={1.0} />
   );
 }
 
+/**
+ * Premium Glass Tabletop board: polished walnut body, green-felt playfield, and
+ * brass inlay rim / rings. The brass boundary ring sits at the true play edge and
+ * the guide rings stay well inside the marble field (no ring coincides with the
+ * spawn band, which previously made edge marbles read as "outside the circle").
+ */
 export function Table({ world }: { world: Arena }) {
   const goals = world.goals;
-  const { map, rough } = useMemo(() => getStoneTextures(), []);
 
   const spokes = useMemo(() => {
     const gr = R - 2.1;
@@ -25,200 +30,91 @@ export function Table({ world }: { world: Arena }) {
     });
   }, [goals]);
 
-  const guideRings = useMemo(() => [0.4, 0.62, 0.82].map((f) => f * R), []);
-  // diagonal corner flourishes (between goals)
-  const flourishes = useMemo(() => {
-    const arr: number[] = [];
-    const n = goals.length;
-    for (let i = 0; i < n; i++) arr.push(goals[i].angle + Math.PI / n);
-    return arr;
-  }, [goals]);
+  // guide rings stay inside the field (field tops out ~0.7R)
+  const guideRings = useMemo(() => [0.4, 0.62].map((f) => f * R), []);
 
   return (
     <group>
-      {/* outer body of the table (rounded base) */}
-      <mesh position={[0, -1.0, 0]}>
+      {/* polished walnut body */}
+      <mesh position={[0, -1.0, 0]} receiveShadow>
         <cylinderGeometry args={[R * 1.04, R * 0.9, 1.6, 96]} />
-        <meshStandardMaterial color="#101219" roughness={0.7} metalness={0.2} />
+        <meshStandardMaterial color={WALNUT} roughness={0.45} metalness={0.1} />
       </mesh>
 
-      {/* main slate disc */}
+      {/* felt under-disc edge */}
       <mesh position={[0, -0.25, 0]} receiveShadow>
         <cylinderGeometry args={[R, R * 1.02, 0.5, 96]} />
-        <meshStandardMaterial map={map} roughnessMap={rough} color="#aeb4c2" roughness={1} metalness={0.15} />
+        <meshStandardMaterial color={FELT} roughness={0.95} metalness={0.0} />
       </mesh>
 
-      {/* textured playable top */}
+      {/* green felt playfield */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.001, 0]} receiveShadow>
         <circleGeometry args={[R * 0.997, 96]} />
-        <meshStandardMaterial map={map} roughnessMap={rough} color="#c2c8d8" roughness={0.85} metalness={0.25} />
+        <meshStandardMaterial color={FELT} roughness={0.96} metalness={0.0} />
       </mesh>
 
-      {/* outer decorative gold band just inside the rim (ref boards) */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]}>
-        <ringGeometry args={[R - 0.85, R - 0.62, 140]} />
-        {goldMat(0.55)}
+      {/* brass boundary ring at the true play edge (the "circle") */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <ringGeometry args={[R - 0.55, R - 0.3, 140]} />
+        {brassMat(0.06)}
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]}>
-        <ringGeometry args={[R - 1.25, R - 1.15, 140]} />
-        {goldMat(0.4)}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.018, 0]}>
+        <ringGeometry args={[R - 1.05, R - 0.95, 140]} />
+        {brassMat(0.04)}
       </mesh>
 
-      {/* concentric gold guide rings */}
+      {/* concentric brass guide rings (well inside the field) */}
       {guideRings.map((r, i) => (
         <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.014, 0]}>
-          <ringGeometry args={[r - 0.045, r + 0.045, 120]} />
-          {goldMat(0.5)}
+          <ringGeometry args={[r - 0.04, r + 0.04, 120]} />
+          {brassMat(0.04)}
         </mesh>
       ))}
 
-      {/* gold spokes + teardrop nodes to each goal */}
+      {/* brass spokes + teardrop nodes to each goal */}
       {spokes.map((s, i) => (
         <group key={i}>
           <mesh position={[Math.cos(s.angle) * s.mid, 0.016, Math.sin(s.angle) * s.mid]} rotation={[0, -s.angle, 0]}>
-            <boxGeometry args={[s.len, 0.03, 0.1]} />
-            {goldMat(0.35)}
+            <boxGeometry args={[s.len, 0.03, 0.09]} />
+            {brassMat(0.04)}
           </mesh>
-          {/* teardrop node near the hub */}
           <mesh position={[Math.cos(s.angle) * 2.7, 0.06, Math.sin(s.angle) * 2.7]}>
-            <sphereGeometry args={[0.18, 16, 12]} />
-            {goldMat(0.5)}
+            <sphereGeometry args={[0.17, 16, 12]} />
+            {brassMat(0.05)}
           </mesh>
-          {/* node near the goal */}
           <mesh position={[Math.cos(s.angle) * s.end, 0.06, Math.sin(s.angle) * s.end]}>
-            <sphereGeometry args={[0.16, 16, 12]} />
-            {goldMat(0.5)}
-          </mesh>
-        </group>
-      ))}
-
-      {/* diagonal corner flourishes */}
-      {flourishes.map((a, i) => (
-        <group key={i} position={[Math.cos(a) * (R - 2.4), 0.05, Math.sin(a) * (R - 2.4)]}>
-          <mesh>
-            <torusGeometry args={[0.34, 0.05, 10, 24]} />
-            {goldMat(0.5)}
-          </mesh>
-          <mesh position={[0, 0.01, 0]}>
-            <sphereGeometry args={[0.12, 12, 10]} />
-            {goldMat(0.6)}
+            <sphereGeometry args={[0.15, 16, 12]} />
+            {brassMat(0.05)}
           </mesh>
         </group>
       ))}
 
       {/* centre hub */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.016, 0]}>
-        <ringGeometry args={[1.5, 1.85, 48]} />
-        {goldMat(0.5)}
+        <ringGeometry args={[1.5, 1.8, 48]} />
+        {brassMat(0.05)}
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.014, 0]}>
-        <ringGeometry args={[0.0, 1.5, 36]} />
-        <meshStandardMaterial map={map} color="#8c92a0" roughness={0.9} metalness={0.25} side={THREE.DoubleSide} />
-      </mesh>
-      <mesh position={[0, 0.12, 0]}>
+      <mesh position={[0, 0.12, 0]} castShadow>
         <sphereGeometry args={[0.22, 16, 12]} />
-        {goldMat(0.7)}
+        {brassMat(0.06)}
       </mesh>
 
-      {/* raised beveled STONE rim (the references show stone, not coral) */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.16, 0]}>
-        <torusGeometry args={[R + 0.18, 0.62, 20, 140]} />
-        <meshStandardMaterial map={map} color="#6a7080" roughness={0.85} metalness={0.25} />
+      {/* raised beveled brass rim */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.16, 0]} castShadow receiveShadow>
+        <torusGeometry args={[R + 0.18, 0.62, 24, 160]} />
+        <meshStandardMaterial color={BRASS} roughness={0.3} metalness={1.0} />
       </mesh>
-      {/* thin gold pinstripe on the inner rim lip */}
+      {/* thin polished lip just inside the rim */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.34, 0]}>
         <torusGeometry args={[R - 0.1, 0.04, 8, 140]} />
-        {goldMat(0.4)}
+        {brassMat(0.05)}
       </mesh>
 
-      {/* warm ORANGE glow leaking from beneath the rim */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.18, 0]}>
-        <torusGeometry args={[R + 0.5, 0.22, 12, 140]} />
-        <meshBasicMaterial color="#ff6a3c" />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.35, 0]}>
-        <ringGeometry args={[R * 0.85, R * 1.4, 96]} />
-        <meshBasicMaterial color="#ff5a3c" transparent opacity={0.16} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} depthWrite={false} />
-      </mesh>
-      {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
-        const a = (i / 8) * Math.PI * 2;
-        return (
-          <pointLight key={i} position={[Math.cos(a) * (R + 0.6), 0.0, Math.sin(a) * (R + 0.6)]} color="#ff6a3c" intensity={3} distance={6} />
-        );
-      })}
-
-      <Props />
-
-      {/* warm wooden / cobble floor to ground the scene */}
+      {/* warm gallery floor to ground the table */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -2.2, 0]} receiveShadow>
         <circleGeometry args={[R * 4, 64]} />
-        <meshStandardMaterial color="#1a140f" roughness={0.95} metalness={0} />
+        <meshStandardMaterial color="#181310" roughness={0.95} metalness={0} />
       </mesh>
-    </group>
-  );
-}
-
-/** Cozy street-corner props around the table (out of play). */
-function Props() {
-  const items = useMemo(() => {
-    const list: { a: number; r: number; kind: "lamp" | "crate" | "barrel" }[] = [];
-    const kinds: ("lamp" | "crate" | "barrel")[] = ["lamp", "crate", "barrel", "lamp", "barrel", "crate"];
-    for (let i = 0; i < 6; i++) {
-      list.push({ a: (i / 6) * Math.PI * 2 + 0.35, r: R + 4.2, kind: kinds[i] });
-    }
-    return list;
-  }, []);
-
-  return (
-    <group>
-      {items.map((it, i) => {
-        const x = Math.cos(it.a) * it.r;
-        const z = Math.sin(it.a) * it.r;
-        if (it.kind === "lamp") {
-          return (
-            <group key={i} position={[x, 0, z]}>
-              <mesh position={[0, 1.8, 0]}>
-                <cylinderGeometry args={[0.08, 0.13, 3.6, 8]} />
-                <meshStandardMaterial color="#26262e" roughness={0.6} metalness={0.6} />
-              </mesh>
-              <mesh position={[0, 3.7, 0]}>
-                <icosahedronGeometry args={[0.34, 0]} />
-                <meshStandardMaterial color="#ffd9a0" emissive="#ffb14d" emissiveIntensity={2.6} />
-              </mesh>
-              <pointLight position={[0, 3.7, 0]} color="#ffb14d" intensity={9} distance={13} />
-            </group>
-          );
-        }
-        if (it.kind === "barrel") {
-          return (
-            <group key={i} position={[x, 0, z]}>
-              <mesh position={[0, 0.7, 0]} castShadow>
-                <cylinderGeometry args={[0.55, 0.55, 1.4, 16]} />
-                <meshStandardMaterial color="#5a3a22" roughness={0.8} metalness={0.1} />
-              </mesh>
-              <mesh position={[0, 0.7, 0]}>
-                <cylinderGeometry args={[0.58, 0.58, 0.12, 16]} />
-                <meshStandardMaterial color="#8a6a3a" roughness={0.5} metalness={0.5} />
-              </mesh>
-            </group>
-          );
-        }
-        // crate with a few marbles
-        return (
-          <group key={i} position={[x, 0, z]} rotation={[0, i, 0]}>
-            <mesh position={[0, 0.5, 0]} castShadow>
-              <boxGeometry args={[1.2, 1.0, 1.2]} />
-              <meshStandardMaterial color="#5b3f26" roughness={0.85} metalness={0.05} />
-            </mesh>
-            {[-0.3, 0.0, 0.3].map((dx, k) => (
-              <mesh key={k} position={[dx, 1.12, (k - 1) * 0.25]}>
-                <sphereGeometry args={[0.16, 12, 10]} />
-                <meshStandardMaterial color={["#27e0e0", "#ff4dd2", "#9cff3d"][k]} roughness={0.05} metalness={0} emissive={["#27e0e0", "#ff4dd2", "#9cff3d"][k]} emissiveIntensity={0.3} />
-              </mesh>
-            ))}
-          </group>
-        );
-      })}
     </group>
   );
 }

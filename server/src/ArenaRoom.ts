@@ -57,9 +57,13 @@ export class ArenaRoom extends Room {
       player.isBot = false;
       player.moveX = 0;
       player.moveZ = 0;
+      player.lastMoveX = 0;
+      player.lastMoveZ = 0;
       player.wantMagnet = false;
       player.wantDash = false;
       player.wantActivate = false;
+      player.dashDirX = 0;
+      player.dashDirZ = 0;
       this.pendingDash[slot] = false;
       this.pendingActivate[slot] = false;
     }
@@ -77,9 +81,13 @@ export class ArenaRoom extends Room {
         p.isBot = true; // a bot takes over the abandoned seat
         p.moveX = 0;
         p.moveZ = 0;
+        p.lastMoveX = 0;
+        p.lastMoveZ = 0;
         p.wantMagnet = false;
         p.wantDash = false;
         p.wantActivate = false;
+        p.dashDirX = 0;
+        p.dashDirZ = 0;
       }
       this.pendingDash[id] = false;
       this.pendingActivate[id] = false;

@@ -1,9 +1,9 @@
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const OUTPUT = process.env.ASSETS_OUTPUT || "outputs/assets-smoke.json";
 const MIN_SFX_BYTES = 4_000;
-const FORBIDDEN_MUSIC_FILES = ["public/audio/music.mp3", "dist/audio/music.mp3"];
+const MUSIC_FILE_PATTERN = /^music\.(mp3|wav|ogg|m4a|aac|flac)$/i;
 const EXPECTED_SFX = [
   "pickup.mp3",
   "bank.mp3",
@@ -20,12 +20,21 @@ async function fileReport(root, file, minBytes) {
   return { path, bytes: info.size };
 }
 
-async function assertNoMusicFile(path) {
+async function assertNoMusicFiles(root) {
   try {
-    const info = await stat(path);
-    throw new Error(`${path} still exists (${info.size} bytes); background music must not ship`);
+    const files = await readdir(root);
+    const musicFiles = files.filter((file) => MUSIC_FILE_PATTERN.test(file));
+    if (musicFiles.length > 0) {
+      const details = await Promise.all(musicFiles.map(async (file) => {
+        const path = join(root, file);
+        const info = await stat(path);
+        return `${path} (${info.size} bytes)`;
+      }));
+      throw new Error(`background music must not ship: ${details.join(", ")}`);
+    }
+    return { root, forbiddenPattern: MUSIC_FILE_PATTERN.source, present: false };
   } catch (error) {
-    if (error?.code === "ENOENT") return { path, present: false };
+    if (error?.code === "ENOENT") return { root, forbiddenPattern: MUSIC_FILE_PATTERN.source, present: false, rootMissing: true };
     throw error;
   }
 }
@@ -38,10 +47,7 @@ async function run() {
       files.push(await fileReport(root, file, MIN_SFX_BYTES));
     }
   }
-  const forbiddenMusicFiles = [];
-  for (const file of FORBIDDEN_MUSIC_FILES) {
-    forbiddenMusicFiles.push(await assertNoMusicFile(file));
-  }
+  const forbiddenMusicFiles = await Promise.all(["public/audio", "dist/audio"].map(assertNoMusicFiles));
 
   const report = {
     pass: true,

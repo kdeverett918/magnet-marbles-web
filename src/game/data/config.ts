@@ -1,4 +1,4 @@
-import type { ModeDef, PowerupType } from "./types";
+import type { BotPersonalityId, ModeDef, PowerupType } from "./types";
 
 export type BotDifficulty = "easy" | "normal" | "hard";
 
@@ -10,6 +10,90 @@ export const BOT_DIFFICULTIES: Record<
   normal: { label: "Normal", skillMult: 1.0, attackMult: 1.0, retargetMult: 1.0, speedMult: 1.0 },
   hard: { label: "Hard", skillMult: 1.18, attackMult: 1.35, retargetMult: 0.78, speedMult: 1.08 },
 };
+
+export const BOT_PERSONALITIES: Record<
+  BotPersonalityId,
+  {
+    label: string;
+    short: string;
+    desc: string;
+    bankWhenCluster: number;
+    attackClusterMax: number;
+    attackMult: number;
+    retargetMult: number;
+    skillMult: number;
+    speedMult: number;
+    dashChance: number;
+    jumboBias: number;
+  }
+> = {
+  collector: {
+    label: "Collector",
+    short: "Collect",
+    desc: "Builds bigger hauls and races for jumbo marbles.",
+    bankWhenCluster: 12,
+    attackClusterMax: 4,
+    attackMult: 0.62,
+    retargetMult: 0.95,
+    skillMult: 1.05,
+    speedMult: 1.0,
+    dashChance: 0.035,
+    jumboBias: 0.25,
+  },
+  bruiser: {
+    label: "Bruiser",
+    short: "Bruise",
+    desc: "Hunts loaded rivals and dashes into carrier lanes.",
+    bankWhenCluster: 8,
+    attackClusterMax: 7,
+    attackMult: 1.7,
+    retargetMult: 0.82,
+    skillMult: 0.96,
+    speedMult: 1.04,
+    dashChance: 0.095,
+    jumboBias: 0.55,
+  },
+  banker: {
+    label: "Banker",
+    short: "Bank",
+    desc: "Banks smaller hauls early and pressures the timer.",
+    bankWhenCluster: 6,
+    attackClusterMax: 3,
+    attackMult: 0.48,
+    retargetMult: 0.72,
+    skillMult: 1.1,
+    speedMult: 0.96,
+    dashChance: 0.025,
+    jumboBias: 0.42,
+  },
+};
+
+export const CORE_POWERUPS: readonly PowerupType[] = [
+  "magnetBurst",
+  "shockPulse",
+  "heavyCore",
+];
+
+export const ADVANCED_POWERUPS: readonly PowerupType[] = [
+  "superMagnet",
+  "doubleScore",
+  "plusFive",
+  "turbo",
+  "disableMagnet",
+  "paint",
+];
+
+export const MID_MATCH_POWERUPS: readonly PowerupType[] = [
+  ...CORE_POWERUPS,
+  "plusFive",
+  "turbo",
+  "paint",
+];
+
+export const ALL_GAMEPLAY_POWERUPS: readonly PowerupType[] = [
+  ...CORE_POWERUPS,
+  ...ADVANCED_POWERUPS,
+];
 
 /**
  * All gameplay tunables in one place (mirrors the Unity GameConfig ScriptableObject).
@@ -69,6 +153,8 @@ export const CONFIG = {
     perRing: 7, // marbles per orbit ring
     spinSpeed: 2.4, // rad/s the cluster rotates
     followLerp: 0.55, // how snappily carried marbles track their slot
+    speedPenaltyPerMarble: 0.012, // full hauls are riskier but still responsive
+    minSpeedMultiplier: 0.78,
   },
 
   // --- Banking / scoring ---
@@ -76,6 +162,8 @@ export const CONFIG = {
     drainPerSec: 26, // marbles banked per second when at goal (juicy count-up)
     paintBonus: 2, // your-color (painted) marbles bank at this multiplier
     knockoffBonus: 2, // points to attacker for knocking a carrier off
+    streakWindow: 8, // seconds to chain a fast return trip
+    streakMax: 3, // +0, +1, +2 bonus points per banked marble
   },
 
   // --- Reward readability ---
@@ -132,6 +220,7 @@ export const CONFIG = {
     skill: 0.82, // 0..1, scaled by BotDirector
     retargetEvery: 1.1,
     difficulties: BOT_DIFFICULTIES,
+    personalities: BOT_PERSONALITIES,
   },
 
   // --- Camera --- symmetric whole-table framing (all 4 goals + rim visible)
@@ -140,7 +229,8 @@ export const CONFIG = {
     distance: 21,
     fov: 42,
     fitMargin: 6.5, // extra world units beyond the rim kept in frame
-    tiltLerp: 0.08,
+    tiltLerp: 0.08, // (legacy) per-frame factor; superseded by `smooth`
+    smooth: 6, // exponential follow rate (1/s) — frame-rate-independent: k = 1 - exp(-smooth*dt)
     parallax: 0.04, // very slight drift toward the human; NOT a tight follow
   },
 

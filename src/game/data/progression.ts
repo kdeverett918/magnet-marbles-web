@@ -30,6 +30,8 @@ export interface ProgressionState {
   selectedTrail: string;
   unlockedTrails: string[];
   dailyCompleted: string[];
+  dailyStreak: DailyStreak;
+  records: ModeRecords;
 }
 
 export interface MatchReward {
@@ -38,6 +40,40 @@ export interface MatchReward {
   won: boolean;
   dailyCompleted: boolean;
   reasons: string[];
+}
+
+export interface NextUnlock {
+  trail: TrailCosmetic;
+  starsNeeded: number;
+  ready: boolean;
+}
+
+export interface DailyStreak {
+  current: number;
+  best: number;
+  lastCompleted: string | null;
+}
+
+export interface DailyStreakPreview {
+  current: number;
+  best: number;
+  next: number;
+  completedToday: boolean;
+}
+
+export interface ModeRecord {
+  bestScore: number;
+  wins: number;
+  matches: number;
+}
+
+export type ModeRecords = Record<string, ModeRecord>;
+
+export interface ModeRecordResult {
+  progression: ProgressionState;
+  previous: ModeRecord;
+  record: ModeRecord;
+  isNewBest: boolean;
 }
 
 export const TRAIL_COSMETICS: TrailCosmetic[] = [
@@ -129,7 +165,65 @@ export const DEFAULT_PROGRESSION: ProgressionState = {
   selectedTrail: "comet",
   unlockedTrails: ["comet"],
   dailyCompleted: [],
+  dailyStreak: { current: 0, best: 0, lastCompleted: null },
+  records: {},
 };
+
+function safeCount(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(value);
+  return Math.max(0, Math.floor(Number.isFinite(n) ? n : 0));
+}
+
+function normalizeRecords(raw: unknown): ModeRecords {
+  if (typeof raw !== "object" || !raw) return {};
+  const records: ModeRecords = {};
+  for (const [modeId, value] of Object.entries(raw).slice(0, 24)) {
+    if (!modeId || typeof value !== "object" || !value) continue;
+    const record = value as Partial<ModeRecord>;
+    records[modeId] = {
+      bestScore: safeCount(record.bestScore),
+      wins: safeCount(record.wins),
+      matches: safeCount(record.matches),
+    };
+  }
+  return records;
+}
+
+function isDailyId(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function dayIndex(id: string): number | null {
+  if (!isDailyId(id)) return null;
+  const [year, month, day] = id.split("-").map(Number);
+  const time = Date.UTC(year, month - 1, day);
+  return Number.isFinite(time) ? Math.floor(time / 86_400_000) : null;
+}
+
+function normalizeDailyStreak(raw: unknown): DailyStreak {
+  const source = typeof raw === "object" && raw ? raw as Partial<DailyStreak> : {};
+  const current = safeCount(source.current);
+  const best = Math.max(current, safeCount(source.best));
+  return {
+    current,
+    best,
+    lastCompleted: isDailyId(source.lastCompleted) ? source.lastCompleted : null,
+  };
+}
+
+function applyDailyStreak(streak: DailyStreak, dailyId: string): DailyStreak {
+  const last = streak.lastCompleted ? dayIndex(streak.lastCompleted) : null;
+  const next = dayIndex(dailyId);
+  if (next === null) return streak;
+  if (last === next) return streak;
+  const continued = last !== null && next - last === 1;
+  const current = continued ? streak.current + 1 : 1;
+  return {
+    current,
+    best: Math.max(streak.best, current),
+    lastCompleted: dailyId,
+  };
+}
 
 export function normalizeProgression(raw: unknown): ProgressionState {
   const source = typeof raw === "object" && raw ? raw as Partial<ProgressionState> : {};
@@ -151,11 +245,75 @@ export function normalizeProgression(raw: unknown): ProgressionState {
     dailyCompleted: Array.isArray(source.dailyCompleted)
       ? [...new Set(source.dailyCompleted.filter((id): id is string => typeof id === "string"))].slice(-30)
       : [],
+    dailyStreak: normalizeDailyStreak(source.dailyStreak),
+    records: normalizeRecords(source.records),
   };
 }
 
 export function getTrailCosmetic(id: string): TrailCosmetic {
   return TRAIL_COSMETICS.find((item) => item.id === id) ?? TRAIL_COSMETICS[0];
+}
+
+export function nextUnlockFor(progress: ProgressionState): NextUnlock | null {
+  const normalized = normalizeProgression(progress);
+  const next = TRAIL_COSMETICS
+    .filter((item) => !normalized.unlockedTrails.includes(item.id))
+    .sort((a, b) => a.cost - b.cost)[0];
+  if (!next) return null;
+  const starsNeeded = Math.max(0, next.cost - normalized.stars);
+  return {
+    trail: next,
+    starsNeeded,
+    ready: starsNeeded === 0,
+  };
+}
+
+export function dailyStreakFor(progress: ProgressionState, daily: DailyChallenge): DailyStreakPreview {
+  const normalized = normalizeProgression(progress);
+  const streak = normalized.dailyStreak;
+  const completedToday = normalized.dailyCompleted.includes(daily.id) || streak.lastCompleted === daily.id;
+  const preview = applyDailyStreak(streak, daily.id);
+  return {
+    current: streak.current,
+    best: streak.best,
+    next: completedToday ? streak.current : preview.current,
+    completedToday,
+  };
+}
+
+export function modeRecordFor(progress: ProgressionState, modeId: string): ModeRecord {
+  const normalized = normalizeProgression(progress);
+  const record = normalized.records[modeId];
+  return record
+    ? { ...record }
+    : { bestScore: 0, wins: 0, matches: 0 };
+}
+
+export function recordMatch(
+  progress: ProgressionState,
+  match: { modeId: string; score: number; won: boolean },
+): ModeRecordResult {
+  const normalized = normalizeProgression(progress);
+  const modeId = match.modeId.trim() || "classic";
+  const previous = modeRecordFor(normalized, modeId);
+  const score = safeCount(match.score);
+  const record = {
+    bestScore: Math.max(previous.bestScore, score),
+    wins: previous.wins + (match.won ? 1 : 0),
+    matches: previous.matches + 1,
+  };
+  return {
+    progression: normalizeProgression({
+      ...normalized,
+      records: {
+        ...normalized.records,
+        [modeId]: record,
+      },
+    }),
+    previous,
+    record,
+    isNewBest: score > previous.bestScore,
+  };
 }
 
 export function unlockTrail(progress: ProgressionState, trailId: string): ProgressionState {
@@ -242,12 +400,17 @@ export function applyReward(
   dailyId?: string | null,
 ): ProgressionState {
   const normalized = normalizeProgression(progress);
+  const dailyCompleted = reward.dailyCompleted && dailyId
+    ? [...normalized.dailyCompleted, dailyId]
+    : normalized.dailyCompleted;
+  const dailyStreak = reward.dailyCompleted && dailyId
+    ? applyDailyStreak(normalized.dailyStreak, dailyId)
+    : normalized.dailyStreak;
   return normalizeProgression({
     ...normalized,
     stars: normalized.stars + reward.stars,
     totalStarsEarned: normalized.totalStarsEarned + reward.stars,
-    dailyCompleted: reward.dailyCompleted && dailyId
-      ? [...normalized.dailyCompleted, dailyId]
-      : normalized.dailyCompleted,
+    dailyCompleted,
+    dailyStreak,
   });
 }

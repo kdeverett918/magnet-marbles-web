@@ -24,6 +24,12 @@ describe("feedback messages", () => {
       title: "Shock pulse",
       tone: "power",
     });
+    expect(feedbackForEvent({ kind: "bankStreak", x: 0, z: 0, color: "#fff", streak: 2, bonus: 1 })).toMatchObject({
+      title: "Bank streak 2",
+      detail: "Quick return: +1 per marble",
+      tone: "score",
+      priority: 5,
+    });
   });
 
   it("surfaces carried-cluster milestones without making every pickup noisy", () => {

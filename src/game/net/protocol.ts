@@ -1,4 +1,4 @@
-import type { FxEvent, PowerupType, RoundPhase } from "../data/types";
+import type { BotPersonalityId, FxEvent, PowerupType, RoundPhase } from "../data/types";
 
 // Wire protocol shared by the Colyseus server and the client.
 // Snapshots are broadcast ~20Hz; the client interpolates between them.
@@ -18,10 +18,13 @@ export interface SnapPlayer {
   ci: number; // colorIndex
   tm: number; // team id
   s: number; // score
+  bs: number; // bank streak count
+  bt: number; // bank streak remaining seconds
   lv: number; // survival lives, 0 outside survival
   cl: number; // cluster length
   al: boolean; // alive
   bot: boolean;
+  bp: BotPersonalityId | null; // bot personality, hidden for human-controlled seats
   x: number;
   z: number;
   y: number;

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { BOT_DIFFICULTIES, type BotDifficulty } from "./data/config";
-import type { PowerupType, RoundPhase } from "./data/types";
+import type { BotPersonalityId, PowerupType, RoundPhase } from "./data/types";
 import { makeWorld } from "./sim/world";
 import type { Arena } from "./sim/arena";
 import { connect, type NetSession } from "./net/client";
@@ -9,10 +9,12 @@ import {
   applyReward,
   dailyChallengeFor,
   normalizeProgression,
+  recordMatch,
   rewardForMatch,
   selectTrail,
   unlockTrail,
   type DailyChallenge,
+  type DailyStreak,
   type MatchReward,
   type ProgressionState,
 } from "./data/progression";
@@ -27,10 +29,17 @@ export interface PlayerHud {
   name: string;
   colorHex: string;
   teamId: number;
+  edgeDistance: number;
+  speed: number;
+  height: number;
   score: number;
   lives: number;
   cluster: number;
+  bankStreak: number;
+  bankStreakBonus: number;
+  bankStreakTimeLeft: number;
   isBot: boolean;
+  botPersonality: BotPersonalityId | null;
   alive: boolean;
 }
 
@@ -62,6 +71,7 @@ export interface Hud {
 interface Settings {
   sound: boolean;
   sfxVolume: number;
+  audioTuningVersion: number;
   haptics: boolean;
   colorAssist: boolean;
   motion: MotionMode;
@@ -69,12 +79,14 @@ interface Settings {
   botDifficulty: BotDifficulty;
 }
 
-const SETTINGS_KEY = "magnet-marbles:settings:v1";
-const TUTORIAL_KEY = "magnet-marbles:tutorial-complete:v1";
-const DEFAULT_SFX_VOLUME = 0.65;
+export const SETTINGS_KEY = "magnet-marbles:settings:v1";
+export const TUTORIAL_KEY = "magnet-marbles:tutorial-complete:v1";
+const DEFAULT_SFX_VOLUME = 0.28;
+const SETTINGS_AUDIO_TUNING_VERSION = 2;
 const DEFAULT_SETTINGS: Settings = {
   sound: true,
   sfxVolume: DEFAULT_SFX_VOLUME,
+  audioTuningVersion: SETTINGS_AUDIO_TUNING_VERSION,
   haptics: true,
   colorAssist: false,
   motion: "auto",
@@ -98,6 +110,7 @@ function defaultSettings(): Settings {
   return {
     sound: true,
     sfxVolume: DEFAULT_SFX_VOLUME,
+    audioTuningVersion: SETTINGS_AUDIO_TUNING_VERSION,
     haptics: true,
     colorAssist: false,
     motion: "auto",
@@ -110,6 +123,12 @@ function isBotDifficulty(value: unknown): value is BotDifficulty {
   return typeof value === "string" && value in BOT_DIFFICULTIES;
 }
 
+function migrateSfxVolume(value: unknown, defaults: Settings, audioTuningVersion: unknown): number {
+  const normalized = clamp01(value, defaults.sfxVolume);
+  if (audioTuningVersion === SETTINGS_AUDIO_TUNING_VERSION) return normalized;
+  return Math.min(normalized, DEFAULT_SFX_VOLUME);
+}
+
 function loadSettings(): Settings {
   const defaults = defaultSettings();
   if (typeof window === "undefined") return defaults;
@@ -117,15 +136,20 @@ function loadSettings(): Settings {
     const raw = window.localStorage.getItem(SETTINGS_KEY);
     if (!raw) return defaults;
     const parsed = JSON.parse(raw) as Partial<Settings>;
-    return {
+    const settings = {
       sound: typeof parsed.sound === "boolean" ? parsed.sound : defaults.sound,
-      sfxVolume: clamp01(parsed.sfxVolume, defaults.sfxVolume),
+      sfxVolume: migrateSfxVolume(parsed.sfxVolume, defaults, parsed.audioTuningVersion),
+      audioTuningVersion: SETTINGS_AUDIO_TUNING_VERSION,
       haptics: typeof parsed.haptics === "boolean" ? parsed.haptics : defaults.haptics,
       colorAssist: typeof parsed.colorAssist === "boolean" ? parsed.colorAssist : defaults.colorAssist,
       motion: isMotionMode(parsed.motion) ? parsed.motion : defaults.motion,
       quality: parsed.quality === "lite" || parsed.quality === "high" ? parsed.quality : defaults.quality,
       botDifficulty: isBotDifficulty(parsed.botDifficulty) ? parsed.botDifficulty : defaults.botDifficulty,
     };
+    if (settings.audioTuningVersion !== parsed.audioTuningVersion || settings.sfxVolume !== parsed.sfxVolume) {
+      saveSettings(settings);
+    }
+    return settings;
   } catch {
     return defaults;
   }
@@ -134,7 +158,10 @@ function loadSettings(): Settings {
 function saveSettings(settings: Settings) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      ...settings,
+      audioTuningVersion: SETTINGS_AUDIO_TUNING_VERSION,
+    }));
   } catch {
     /* storage can be unavailable in private or embedded browsers */
   }
@@ -177,9 +204,33 @@ function saveProgression(progression: ProgressionState) {
   }
 }
 
+function clearLocalGameData() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(SETTINGS_KEY);
+    window.localStorage.removeItem(PROGRESSION_KEY);
+    window.localStorage.removeItem(TUTORIAL_KEY);
+  } catch {
+    /* storage can be unavailable in private or embedded browsers */
+  }
+}
+
 export type NetStatus = "idle" | "connecting" | "connected" | "error";
 export type NetState = { status: NetStatus; roomId: string; error: string; startedAt: number };
-export type RewardSummary = MatchReward & { runId: number; dailyId: string | null };
+export type RewardSummary = MatchReward & {
+  runId: number;
+  dailyId: string | null;
+  dailyStreak: Pick<DailyStreak, "current" | "best"> | null;
+  record: {
+    modeId: string;
+    score: number;
+    bestScore: number;
+    previousBest: number;
+    isNewBest: boolean;
+    wins: number;
+    matches: number;
+  };
+};
 
 interface GameStore {
   screen: "menu" | "game";
@@ -211,6 +262,7 @@ interface GameStore {
   setMotion: (mode: MotionMode) => void;
   setQuality: (q: "high" | "lite") => void;
   setBotDifficulty: (difficulty: BotDifficulty) => void;
+  clearLocalData: () => void;
   unlockTrail: (id: string) => void;
   selectTrail: (id: string) => void;
   claimMatchReward: (hud: Hud) => void;
@@ -420,6 +472,36 @@ export const useGame = create<GameStore>((set, get) => ({
     saveSettings(settings);
     return { settings };
   }),
+  clearLocalData: () => {
+    connectTicket++;
+    if (session) {
+      const oldSession = session;
+      session = null;
+      try {
+        oldSession.room.leave();
+      } catch {
+        /* noop */
+      }
+    }
+    liveArena = null;
+    clearLocalGameData();
+    set({
+      screen: "menu",
+      online: false,
+      paused: false,
+      modeId: "classic",
+      playerCount: 4,
+      settings: defaultSettings(),
+      progression: normalizeProgression(null),
+      dailyChallenge: dailyChallengeFor(),
+      activeDailyId: null,
+      runId: 0,
+      lastReward: null,
+      hud: emptyHud,
+      feedback: null,
+      net: emptyNet,
+    });
+  },
   unlockTrail: (id) => set((s) => {
     const progression = unlockTrail(s.progression, id);
     saveProgression(progression);
@@ -438,18 +520,40 @@ export const useGame = create<GameStore>((set, get) => ({
     const humanResult = ranked.find((entry) => entry.player.id === hud.humanId);
     if (!humanResult) return s;
     const daily = s.activeDailyId === s.dailyChallenge.id ? s.dailyChallenge : null;
+    const score = resultScoreForPlayer(hud.modeKind, hud.players, human);
     const reward = rewardForMatch({
       won: humanResult.isWinner,
       placement: humanResult.placement,
-      score: resultScoreForPlayer(hud.modeKind, hud.players, human),
+      score,
       daily,
       dailyAlreadyCompleted: daily ? s.progression.dailyCompleted.includes(daily.id) : true,
     });
-    const progression = applyReward(s.progression, reward, daily?.id ?? null);
+    const withReward = applyReward(s.progression, reward, daily?.id ?? null);
+    const recorded = recordMatch(withReward, { modeId: hud.modeId, score, won: humanResult.isWinner });
+    const progression = recorded.progression;
     saveProgression(progression);
     return {
       progression,
-      lastReward: { ...reward, runId: s.runId, dailyId: daily?.id ?? null },
+      lastReward: {
+        ...reward,
+        runId: s.runId,
+        dailyId: daily?.id ?? null,
+        dailyStreak: reward.dailyCompleted
+          ? {
+              current: progression.dailyStreak.current,
+              best: progression.dailyStreak.best,
+            }
+          : null,
+        record: {
+          modeId: hud.modeId,
+          score,
+          bestScore: recorded.record.bestScore,
+          previousBest: recorded.previous.bestScore,
+          isNewBest: recorded.isNewBest,
+          wins: recorded.record.wins,
+          matches: recorded.record.matches,
+        },
+      },
     };
   }),
   pushHud: (hud) => {

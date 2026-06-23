@@ -14,13 +14,16 @@ const SAMPLE_URLS = {
   fall: "./audio/sfx/fall.mp3",
 } as const;
 
+const DEFAULT_ENGINE_VOLUME = 0.28;
+const OUTPUT_GAIN_TRIM = 0.72;
+
 type SampleName = keyof typeof SAMPLE_URLS;
 
 class SfxEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private enabled = true;
-  private volume = 0.65;
+  private volume = DEFAULT_ENGINE_VOLUME;
   private samplesStarted = false;
   private sampleBuffers: Partial<Record<SampleName, AudioBuffer>> = {};
 
@@ -30,7 +33,7 @@ class SfxEngine {
   }
 
   setVolume(volume: number) {
-    this.volume = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0.65));
+    this.volume = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : DEFAULT_ENGINE_VOLUME));
     this.applyMasterGain();
   }
 
@@ -78,7 +81,7 @@ class SfxEngine {
     const g = this.ctx.createGain();
     src.buffer = buffer;
     src.playbackRate.value = rate;
-    g.gain.value = gain;
+    g.gain.value = gain * OUTPUT_GAIN_TRIM;
     src.connect(g);
     g.connect(this.master);
     src.start(this.ctx.currentTime);
@@ -101,7 +104,7 @@ class SfxEngine {
     osc.frequency.setValueAtTime(freq, t);
     if (slideTo) osc.frequency.exponentialRampToValueAtTime(Math.max(slideTo, 1), t + dur);
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(gain, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(gain * OUTPUT_GAIN_TRIM, t + 0.008);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     osc.connect(g);
     g.connect(dest ?? this.master);
@@ -122,7 +125,7 @@ class SfxEngine {
     filt.type = "highpass";
     filt.frequency.value = hp;
     const g = this.ctx.createGain();
-    g.gain.value = gain;
+    g.gain.value = gain * OUTPUT_GAIN_TRIM;
     src.connect(filt);
     filt.connect(g);
     g.connect(this.master);
@@ -147,6 +150,11 @@ class SfxEngine {
         this.sample("bank", ev.big ? 0.62 : 0.42, ev.big ? 0.92 : 1.04);
         this.blip(ev.big ? 440 : 660, 0.16, "square", 0.22, ev.big ? 1320 : 990);
         this.blip(880, 0.12, "sine", 0.12, 1760);
+        break;
+      case "bankStreak":
+        this.sample("bank", 0.38 + ev.bonus * 0.08, 1.12 + ev.bonus * 0.06);
+        this.blip(760, 0.1, "triangle", 0.14, 1140);
+        this.blip(980 + ev.bonus * 140, 0.14, "sine", 0.13, 1500 + ev.bonus * 240);
         break;
       case "hit":
         if (!this.sample("hit", 0.36, 0.92 + Math.random() * 0.16)) {
@@ -181,6 +189,19 @@ class SfxEngine {
 
   countdownBeep(go: boolean) {
     this.blip(go ? 880 : 520, go ? 0.3 : 0.12, "square", 0.25, go ? 1320 : undefined);
+  }
+
+  preview() {
+    this.ensure();
+    if (!this.ctx || !this.enabled) return;
+    if (!this.sample("pickup", 0.2, 1.02)) this.blip(620, 0.08, "triangle", 0.13, 980);
+    globalThis.setTimeout(() => {
+      if (!this.ctx || !this.enabled) return;
+      if (!this.sample("bank", 0.24, 1.08)) {
+        this.blip(760, 0.1, "sine", 0.12, 1220);
+        this.blip(1040, 0.12, "triangle", 0.1, 1560);
+      }
+    }, 105);
   }
 }
 

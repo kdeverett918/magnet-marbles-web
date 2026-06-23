@@ -1,12 +1,13 @@
 import { useEffect, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Environment, Lightformer } from "@react-three/drei";
-import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
+import { EffectComposer, Bloom, Vignette, DepthOfField, Noise } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { CONFIG } from "../data/config";
 import { getWorld, useGame, type Hud, type TutorialStep } from "../store";
 import { feedbackForEvents } from "../data/feedback";
-import { input, clearEdges, setTouchMagnet, drag, setDragTarget, endDrag } from "../input/controls";
+import { input, clearEdges, setTouchMagnet } from "../input/controls";
+import { humanFrameIntent } from "../input/frameIntent";
 import { sfx } from "../audio/sfx";
 import { haptics } from "../haptics/haptics";
 import type { PowerupType } from "../data/types";
@@ -48,35 +49,19 @@ function GameLoop({ particles, reducedMotion }: { particles: React.RefObject<Par
       return;
     }
 
-    // feed the local human's input (slot = humanId; 0 for single-player)
+    // feed the local human's input (slot = humanId; 0 for single-player).
+    // Movement comes from the floating joystick (touch) or keyboard (WASD) — both
+    // write input.moveX/Z directly via the controls module.
     const hid = world.humanId;
-    const me = world.players[hid] ?? world.players[0];
-
-    // direct-drag steering: the marble chases the finger/cursor point on the table
-    if (drag.active && me) {
-      const dx = drag.x - me.pos.x;
-      const dz = drag.z - me.pos.z;
-      const dist = Math.hypot(dx, dz);
-      if (dist > 0.5) {
-        const m = Math.min(dist / 3.5, 1); // full speed when the finger is far
-        input.moveX = (dx / dist) * m;
-        input.moveZ = (dz / dist) * m;
-      } else {
-        input.moveX = 0;
-        input.moveZ = 0;
-      }
-    }
 
     setTouchMagnet(input.magnet);
-    // auto-magnet while moving so one-thumb / casual play just works; the
-    // explicit magnet button/Space still lets you magnetize while stationary.
-    const moving = Math.hypot(input.moveX, input.moveZ) > 0.15;
+    const intent = humanFrameIntent(input);
     world.setInput(hid, {
-      moveX: input.moveX,
-      moveZ: input.moveZ,
-      magnet: input.magnet || moving,
-      dash: input.dash,
-      activate: input.activate,
+      moveX: intent.moveX,
+      moveZ: intent.moveZ,
+      magnet: intent.magnet,
+      dash: intent.dash,
+      activate: intent.activate,
     });
     clearEdges();
     world.flushInput(dt); // no-op locally; sends to server when online
@@ -132,7 +117,10 @@ function GameLoop({ particles, reducedMotion }: { particles: React.RefObject<Par
       dir.y * fitDist,
       target.z + dir.z * fitDist + lift
     );
-    camera.position.lerp(desired, reducedMotion ? 0.18 : CONFIG.camera.tiltLerp);
+    // frame-rate-independent camera damping (was a fixed per-frame lerp, which
+    // snapped harder on slow frames and jittered under variable frame timing).
+    const camK = 1 - Math.exp(-(reducedMotion ? 16 : CONFIG.camera.smooth) * dt);
+    camera.position.lerp(desired, camK);
     if (!reducedMotion) {
       const shake = cameraShakeOffset(cameraShake.current, dt);
       camera.position.x += shake.x;
@@ -179,10 +167,17 @@ function buildHud(world: ReturnType<typeof getWorld>): Hud {
       name: p.name,
       colorHex: p.colorHex,
       teamId: p.teamId,
+      edgeDistance: Math.round((CONFIG.tableRadius - p.radius - Math.hypot(p.pos.x, p.pos.z)) * 100) / 100,
+      speed: Math.round(Math.hypot(p.vel.x, p.vel.z) * 100) / 100,
+      height: Math.round(p.y * 100) / 100,
       score: p.score,
       lives: p.lives,
       cluster: p.cluster.length,
+      bankStreak: p.bankStreak,
+      bankStreakBonus: Math.max(0, Math.min(CONFIG.bank.streakMax, p.bankStreak) - 1),
+      bankStreakTimeLeft: Math.max(0, p.bankStreakUntil - w.time),
       isBot: p.isBot,
+      botPersonality: p.isBot ? p.botPersonality : null,
       alive: p.alive,
     })),
     heldPowerup: human?.heldPowerup ?? null,
@@ -202,42 +197,6 @@ function tutorialStepFor(phase: string, assist: boolean, complete: boolean, clus
   if (complete) return "done";
   if (phase !== "intro" && phase !== "playing") return "off";
   return cluster > 0 ? "bank" : "collect";
-}
-
-/** Invisible ground plane that turns finger/mouse drags into a table point. */
-function DragPlane() {
-  const dragging = useRef(false);
-  useEffect(() => {
-    const up = () => {
-      if (dragging.current) {
-        dragging.current = false;
-        endDrag();
-      }
-    };
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
-    return () => {
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
-    };
-  }, []);
-  return (
-    <mesh
-      rotation={[-Math.PI / 2, 0, 0]}
-      position={[0, 0.01, 0]}
-      onPointerDown={(e) => {
-        dragging.current = true;
-        setDragTarget(e.point.x, e.point.z);
-        sfx.ensure();
-      }}
-      onPointerMove={(e) => {
-        if (dragging.current) setDragTarget(e.point.x, e.point.z);
-      }}
-    >
-      <planeGeometry args={[400, 400]} />
-      <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-    </mesh>
-  );
 }
 
 export function GameScene() {
@@ -261,24 +220,24 @@ export function GameScene() {
       gl={{ antialias: !lite || !mobileViewport, powerPreference: "high-performance" }}
       onCreated={({ gl, scene }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
-        gl.toneMappingExposure = 1.3;
-        // vibrant arcade sky — brighter, less dark
+        gl.toneMappingExposure = 1.15;
+        // premium glass tabletop — warm neutral gallery backdrop
         scene.background = makeGradientTexture([
-          [0, "#3a2f6b"],
-          [0.45, "#27306a"],
-          [1, "#121a40"],
+          [0, "#2a2622"],
+          [0.5, "#1c1a17"],
+          [1, "#100e0c"],
         ]);
-        scene.fog = new THREE.Fog("#222a5a", 48, 92);
+        scene.fog = new THREE.Fog("#171511", 55, 110);
       }}
     >
       <GameLoop particles={particles} reducedMotion={reducedMotion} />
 
-      {/* lighting — bright, colorful arcade key/fill/rim */}
-      <ambientLight intensity={0.7} color="#aebbff" />
-      <hemisphereLight args={["#cfd8ff", "#3a2a4a", 0.6]} />
+      {/* lighting — warm gallery key + cool fill (premium glass tabletop) */}
+      <ambientLight intensity={0.35} color="#fff4e6" />
+      <hemisphereLight args={["#fff0dc", "#2a2018", 0.4]} />
       <directionalLight
-        position={[10, 24, 12]}
-        intensity={1.9}
+        position={[12, 26, 10]}
+        intensity={2.4}
         color="#fff2e0"
         castShadow={shadowsEnabled}
         shadow-mapSize={shadowMapSize}
@@ -288,20 +247,18 @@ export function GameScene() {
         shadow-camera-bottom={-20}
         shadow-bias={-0.0004}
       />
-      <directionalLight position={[-12, 10, -8]} intensity={0.8} color="#5fa0ff" />
-      <directionalLight position={[0, 8, -16]} intensity={0.7} color="#ff7ad0" />
+      <directionalLight position={[-14, 12, -8]} intensity={0.7} color="#9fb6ff" />
 
-      {/* baked studio reflections for the glossy marbles (no external HDR fetch) */}
-      <Environment resolution={64} frames={1}>
-        <color attach="background" args={["#05060c"]} />
-        <Lightformer intensity={2.2} position={[0, 6, 4]} scale={[10, 10, 1]} color="#fff0d8" />
-        <Lightformer intensity={1.2} position={[6, 3, -4]} scale={[6, 6, 1]} color="#88aaff" />
-        <Lightformer intensity={1.0} position={[-6, 3, -4]} scale={[6, 6, 1]} color="#ff88aa" />
-        <Lightformer intensity={0.8} position={[0, -4, 2]} scale={[10, 4, 1]} color="#334" />
+      {/* warm studio reflections for the refractive glass marbles (no external HDR fetch) */}
+      <Environment resolution={128} frames={1}>
+        <color attach="background" args={["#0b0a08"]} />
+        <Lightformer intensity={2.6} position={[0, 6, 4]} scale={[10, 10, 1]} color="#fff0d8" />
+        <Lightformer intensity={1.4} position={[6, 3, -4]} scale={[6, 6, 1]} color="#ffd9a8" />
+        <Lightformer intensity={1.2} position={[-6, 3, -4]} scale={[6, 6, 1]} color="#bcd0ff" />
+        <Lightformer intensity={1.0} position={[0, -3, 2]} scale={[10, 4, 1]} color="#3a2e22" />
       </Environment>
 
       <Table world={world} />
-      <DragPlane />
       <Goals world={world} />
       <Obstacles world={world} />
       <Marbles world={world} />
@@ -312,9 +269,12 @@ export function GameScene() {
       {quality === "high" && !reducedMotion && !mobileViewport && <AmbientMotes />}
 
       {quality === "high" && (
-        <EffectComposer multisampling={0} enableNormalPass={false}>
-          <Bloom intensity={1.1} luminanceThreshold={0.55} luminanceSmoothing={0.22} mipmapBlur radius={0.75} />
-          <Vignette eskil={false} offset={0.3} darkness={0.55} />
+        <EffectComposer multisampling={mobileViewport ? 0 : 4} enableNormalPass={false}>
+          {/* gentle gallery depth-of-field: play disc stays sharp, surrounds soften */}
+          <DepthOfField target={[0, 0, 0]} focalLength={0.01} bokehScale={1.8} height={480} />
+          <Bloom intensity={0.5} luminanceThreshold={0.7} luminanceSmoothing={0.3} mipmapBlur radius={0.6} />
+          <Vignette eskil={false} offset={0.32} darkness={0.5} />
+          <Noise opacity={0.03} premultiply />
         </EffectComposer>
       )}
     </Canvas>

@@ -11,6 +11,7 @@ const EXPECT_SOURCE_FINGERPRINT = process.env.LIVE_VERSION_EXPECT_SOURCE_FINGERP
 const TIMEOUT_MS = Number(process.env.LIVE_VERSION_TIMEOUT_MS || 60_000);
 const REQUIRE_MATCH = process.env.LIVE_VERSION_REQUIRE_MATCH !== "0";
 const MUSIC_TOMBSTONE_MAX_BYTES = Number(process.env.LIVE_VERSION_MUSIC_TOMBSTONE_MAX_BYTES || 20_000);
+const REMOVED_MUSIC_FILENAMES = ["music.mp3", "music.ogg", "music.wav", "music.m4a", "music.aac", "music.flac"];
 
 function commandOutput(command, args, fallback) {
   try {
@@ -137,7 +138,7 @@ function summarizeBuild(name, result, build) {
   };
 }
 
-function summarizeForbiddenMusic(result) {
+function summarizeForbiddenMusicResult(result) {
   const missingOrGone = result.status === 404 || result.status === 410;
   const contentLength = Number(result.contentLength);
   const tinyLegacyTombstone = result.status === 200
@@ -145,7 +146,6 @@ function summarizeForbiddenMusic(result) {
     && contentLength > 0
     && contentLength <= MUSIC_TOMBSTONE_MAX_BYTES;
   return {
-    name: "live:forbidden-background-music",
     pass: missingOrGone || tinyLegacyTombstone,
     url: result.url,
     status: result.status,
@@ -161,19 +161,36 @@ function summarizeForbiddenMusic(result) {
   };
 }
 
+function summarizeForbiddenMusic(results) {
+  const assets = results.map(summarizeForbiddenMusicResult);
+  const failing = assets.filter((asset) => !asset.pass);
+  return {
+    name: "live:forbidden-background-music",
+    pass: failing.length === 0,
+    url: assets[0]?.url || "missing",
+    checkedCount: assets.length,
+    extensions: REMOVED_MUSIC_FILENAMES.map((file) => file.split(".").pop()),
+    maxLegacyTombstoneBytes: MUSIC_TOMBSTONE_MAX_BYTES,
+    assets,
+    error: failing.length > 0
+      ? failing.map((asset) => asset.error || `${asset.url} failed`).join("; ")
+      : undefined,
+  };
+}
+
 async function run() {
   const webBuildUrl = new URL("./build.json", LIVE_WEB_URL).toString();
-  const forbiddenMusicUrl = new URL("./audio/music.mp3", LIVE_WEB_URL).toString();
+  const forbiddenMusicUrls = REMOVED_MUSIC_FILENAMES.map((file) => new URL(`./audio/${file}`, LIVE_WEB_URL).toString());
   const serverHealthUrl = healthUrlForEndpoint(LIVE_SERVER_URL);
-  const [webResult, musicResult, serverResult] = await Promise.all([
+  const [webResult, musicResults, serverResult] = await Promise.all([
     fetchJson(webBuildUrl),
-    fetchStatus(forbiddenMusicUrl),
+    Promise.all(forbiddenMusicUrls.map((url) => fetchStatus(url))),
     fetchJson(serverHealthUrl),
   ]);
 
   const checks = [
     summarizeBuild("live:web-build-version", webResult, webResult.body),
-    summarizeForbiddenMusic(musicResult),
+    summarizeForbiddenMusic(musicResults),
     summarizeBuild("live:server-health-version", serverResult, serverResult.body?.build),
   ];
   const blockers = checks.filter((check) => !check.pass).map((check) => `${check.name}: ${check.error}`);
@@ -188,7 +205,7 @@ async function run() {
     endpoints: {
       web: LIVE_WEB_URL,
       webBuild: webBuildUrl,
-      forbiddenMusic: forbiddenMusicUrl,
+      forbiddenMusic: forbiddenMusicUrls,
       server: LIVE_SERVER_URL,
       serverHealth: serverHealthUrl,
     },

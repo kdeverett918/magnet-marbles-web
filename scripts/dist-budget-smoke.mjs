@@ -16,6 +16,7 @@ const LIMITS = {
 };
 
 const TEXT_EXTENSIONS = new Set([".html", ".js", ".css", ".svg", ".webmanifest"]);
+const MUSIC_FILE_PATTERN = /(?:^|\/)audio\/music\.(mp3|wav|ogg|m4a|aac|flac)$/i;
 const DEV_MARKERS = [
   "/@vite/client",
   "vite/client",
@@ -80,7 +81,7 @@ async function run() {
     const asset = { path: rel, kind, bytes: info.size };
 
     if (rel.endsWith(".map")) throw new Error(`${rel} should not ship in production dist`);
-    if (/audio\/music\.(mp3|wav|ogg|m4a)$/i.test(rel)) {
+    if (MUSIC_FILE_PATTERN.test(rel)) {
       throw new Error(`${rel} must not ship; background music is disabled`);
     }
 

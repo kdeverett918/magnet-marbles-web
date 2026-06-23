@@ -1,4 +1,14 @@
-import { BOT_DIFFICULTIES, CONFIG, MODES, POWERUP_META, type BotDifficulty } from "../data/config";
+import {
+  ALL_GAMEPLAY_POWERUPS,
+  BOT_DIFFICULTIES,
+  BOT_PERSONALITIES,
+  CONFIG,
+  CORE_POWERUPS,
+  MID_MATCH_POWERUPS,
+  MODES,
+  POWERUP_META,
+  type BotDifficulty,
+} from "../data/config";
 import {
   CANDY_COLORS,
   JUMBO_COLOR,
@@ -11,6 +21,7 @@ import {
   type Marble,
   type ModeDef,
   type Player,
+  type BotPersonalityId,
   type PowerupPickup,
   type PowerupType,
   type RoundPhase,
@@ -18,15 +29,11 @@ import {
 import { clamp, dist, dist2, len, lerp, moveToward, mulberry32 } from "./mathx";
 import { sanitizeInputIntent, type PlayerInputIntent } from "./inputIntent";
 
-const ALL_POWERUPS: PowerupType[] = [
-  "magnetBurst",
-  "shockPulse",
-  "heavyCore",
-];
 const TUTORIAL_ASSIST_SECONDS = 45;
 const TUTORIAL_BOT_SCORE_CAP = 8;
 const TUTORIAL_BOT_SPEED_MULT = 0.62;
 const TUTORIAL_BOT_BANK_MULT = 0.35;
+const BOT_PERSONALITY_ORDER: BotPersonalityId[] = ["collector", "bruiser", "banker"];
 
 export interface WorldOptions {
   mode: ModeDef;
@@ -69,6 +76,12 @@ export class World {
 
   fx: FxEvent[] = [];
 
+  // render-interpolation factor in [0,1]: how far the render frame sits between
+  // the previous fixed-step state (Marble/Player px/pz/py) and the current pos.
+  // Renderers lerp by this so motion is smooth on high-refresh displays / dropped
+  // frames instead of snapping in discrete 60Hz chunks.
+  renderAlpha = 1;
+
   private nextMarbleId = 1;
   private nextPickupId = 1;
   private accumulator = 0;
@@ -92,9 +105,10 @@ export class World {
     this.bankDrain = [];
     for (let i = 0; i < n; i++) {
       const angle = (i / n) * Math.PI * 2 + Math.PI / 4;
+      const isBot = i >= this.humans;
       const p: Player = {
         id: i,
-        isBot: i >= this.humans,
+        isBot,
         name: PLAYER_NAMES[i],
         colorHex: PLAYER_COLORS[i],
         colorIndex: i,
@@ -110,17 +124,25 @@ export class World {
         respawnTimer: 0,
         moveX: 0,
         moveZ: 0,
+        lastMoveX: 0,
+        lastMoveZ: 0,
         wantMagnet: false,
         wantDash: false,
         wantActivate: false,
         magnetActive: false,
         dashCooldown: 0,
         dashTimer: 0,
+        dashDirX: 0,
+        dashDirZ: 0,
         cluster: [],
+        bankStreak: 0,
+        bankStreakUntil: 0,
+        bankRunActive: false,
         heldPowerup: null,
         activeUntil: {},
         goalAngle: angle,
         botState: "search",
+        botPersonality: isBot ? this.botPersonalityForSlot(i) : null,
         botTimer: 0,
         botTargetMarble: -1,
         botTargetPlayer: -1,
@@ -147,11 +169,19 @@ export class World {
     return this.mode.kind === "team-bank" ? slot % 2 : slot;
   }
 
+  private botPersonalityForSlot(slot: number): BotPersonalityId {
+    const offset = Math.max(0, slot - this.humans);
+    return BOT_PERSONALITY_ORDER[offset % BOT_PERSONALITY_ORDER.length];
+  }
+
   // ---------------------------------------------------------------- match flow
   startMatch() {
     this.round = 1;
     this.humanBankedThisMatch = false;
-    for (const p of this.players) p.score = 0;
+    for (const p of this.players) {
+      p.score = 0;
+      this.resetBankStreak(p);
+    }
     this.winnerId = -1;
     this.startRound();
   }
@@ -186,6 +216,11 @@ export class World {
       p.activeUntil = {};
       p.dashCooldown = 0;
       p.dashTimer = 0;
+      p.lastMoveX = 0;
+      p.lastMoveZ = 0;
+      p.dashDirX = 0;
+      p.dashDirZ = 0;
+      this.resetBankStreak(p);
       p.botState = "search";
       p.botTimer = 0;
       this.bankDrain[i] = 0;
@@ -203,11 +238,16 @@ export class World {
   }
 
   private spawnCollectible(initial: boolean, jumbo = false): Marble {
-    // distribute in a ring band so the field reads like the reference art
+    // distribute in a ring band that sits CLEARLY inside the visible boundary
+    // ring. The old band topped out at 0.82R (== the outer guide ring) so edge
+    // marbles, drawn raised by +radius under the 3/4 tilt, read as "outside the
+    // circle". Cap to playRadius - radius - margin and pull the band inward.
+    const r = jumbo ? CONFIG.marble.jumboRadius : CONFIG.marble.radius;
+    const maxRad = CONFIG.tableRadius - 1.8 - r; // stay off the rim/boundary band
     const ang = this.rng() * Math.PI * 2;
     const rad = initial
-      ? lerp(CONFIG.tableRadius * 0.18, CONFIG.tableRadius * 0.82, Math.sqrt(this.rng()))
-      : this.rng() * CONFIG.tableRadius * 0.5;
+      ? Math.min(maxRad, lerp(CONFIG.tableRadius * 0.1, CONFIG.tableRadius * 0.66, Math.sqrt(this.rng())))
+      : Math.min(maxRad, this.rng() * CONFIG.tableRadius * 0.5);
     const color = jumbo ? JUMBO_COLOR : CANDY_COLORS[(this.rng() * CANDY_COLORS.length) | 0];
     const m: Marble = {
       id: this.nextMarbleId++,
@@ -243,7 +283,8 @@ export class World {
   private makePickup(): PowerupPickup {
     const ang = this.rng() * Math.PI * 2;
     const rad = lerp(2, CONFIG.tableRadius * 0.62, this.rng());
-    const type = ALL_POWERUPS[(this.rng() * ALL_POWERUPS.length) | 0];
+    const pool = this.powerupPoolForRound();
+    const type = pool[(this.rng() * pool.length) | 0];
     return {
       id: this.nextPickupId++,
       pos: { x: Math.cos(ang) * rad, z: Math.sin(ang) * rad },
@@ -252,6 +293,12 @@ export class World {
       respawnTimer: 0,
       bob: this.rng() * Math.PI * 2,
     };
+  }
+
+  private powerupPoolForRound(): readonly PowerupType[] {
+    if (this.round <= 1) return CORE_POWERUPS;
+    if (this.round === 2) return MID_MATCH_POWERUPS;
+    return ALL_GAMEPLAY_POWERUPS;
   }
 
   private spawnObstacles() {
@@ -327,11 +374,28 @@ export class World {
     this.accumulator += realDt;
     let steps = 0;
     while (this.accumulator >= CONFIG.fixedDt && steps < CONFIG.maxSubSteps) {
+      this.snapshotRenderPrev(); // capture state BEFORE this step for interpolation
       this.step(CONFIG.fixedDt);
       this.accumulator -= CONFIG.fixedDt;
       steps++;
     }
     if (steps === CONFIG.maxSubSteps) this.accumulator = 0; // avoid spiral of death
+    // fraction into the next step; renderers lerp px/pz/py -> pos by this amount.
+    this.renderAlpha = Math.min(1, Math.max(0, this.accumulator / CONFIG.fixedDt));
+  }
+
+  /** Store each body's current position as the interpolation origin (px/pz/py). */
+  private snapshotRenderPrev() {
+    for (const m of this.marbles) {
+      m.px = m.pos.x;
+      m.pz = m.pos.z;
+      m.py = m.y;
+    }
+    for (const p of this.players) {
+      p.px = p.pos.x;
+      p.pz = p.pos.z;
+      p.py = p.y;
+    }
   }
 
   // ---------------------------------------------------------------- fixed step
@@ -347,6 +411,7 @@ export class World {
     }
 
     for (const p of this.players) {
+      this.updateBankStreakTimer(p);
       if (p.isBot) this.botThink(p, dt);
       this.updatePlayer(p, dt);
     }
@@ -395,19 +460,30 @@ export class World {
     // magnet state
     p.magnetActive = p.wantMagnet && this.magnetUsable(p);
 
+    const inputMag = Math.hypot(p.moveX, p.moveZ);
+    if (inputMag > 0.001) {
+      p.lastMoveX = p.moveX / inputMag;
+      p.lastMoveZ = p.moveZ / inputMag;
+    }
+
     // dash (consume the latched press either way)
     if (p.dashCooldown > 0) p.dashCooldown -= dt;
     if (p.dashTimer > 0) p.dashTimer -= dt;
     if (p.wantDash) {
       if (p.dashCooldown <= 0 && p.dashTimer <= 0) {
-        p.dashTimer = CONFIG.player.dashDuration;
-        p.dashCooldown = CONFIG.player.dashCooldown;
+        const dashDir = this.dashDirection(p, inputMag);
+        if (dashDir) {
+          p.dashDirX = dashDir.x;
+          p.dashDirZ = dashDir.z;
+          p.dashTimer = CONFIG.player.dashDuration;
+          p.dashCooldown = CONFIG.player.dashCooldown;
+        }
       }
       p.wantDash = false;
     }
 
     // desired velocity from input
-    let speed: number = CONFIG.player.moveSpeed;
+    let speed: number = CONFIG.player.moveSpeed * this.carrySpeedMultiplier(p);
     if (this.hasPU(p, "turbo")) speed *= CONFIG.powerups.turboSpeedMult;
     if (this.hasPU(p, "superMagnet")) speed += CONFIG.powerups.superMagnetSpeedBonus;
     if (this.hasPU(p, "heavyCore")) speed *= CONFIG.combat.heavyCoreSpeedMult;
@@ -417,13 +493,20 @@ export class World {
       speed *= this.tutorialBotAssistActive() ? TUTORIAL_BOT_SPEED_MULT : BOT_DIFFICULTIES[this.botDifficulty].speedMult;
     }
 
-    const mag = Math.hypot(p.moveX, p.moveZ);
+    let driveX = p.moveX;
+    let driveZ = p.moveZ;
+    let mag = inputMag;
+    if (dashing && mag <= 0.001) {
+      driveX = p.dashDirX;
+      driveZ = p.dashDirZ;
+      mag = Math.hypot(driveX, driveZ);
+    }
     let tvx = 0;
     let tvz = 0;
     if (mag > 0.001) {
       const m = Math.min(mag, 1);
-      tvx = (p.moveX / mag) * speed * m;
-      tvz = (p.moveZ / mag) * speed * m;
+      tvx = (driveX / mag) * speed * m;
+      tvz = (driveZ / mag) * speed * m;
     }
     const accel = CONFIG.player.accel * (dashing ? 2.2 : 1);
     p.vel.x = moveToward(p.vel.x, tvx, accel * dt);
@@ -439,6 +522,21 @@ export class World {
     p.pos.z += p.vel.z * dt;
 
     this.rimCheck(p, dt);
+  }
+
+  private carrySpeedMultiplier(p: Player): number {
+    if (p.cluster.length <= 0) return 1;
+    return Math.max(
+      CONFIG.carry.minSpeedMultiplier,
+      1 - p.cluster.length * CONFIG.carry.speedPenaltyPerMarble,
+    );
+  }
+
+  private dashDirection(p: Player, inputMag: number): { x: number; z: number } | null {
+    if (inputMag > 0.001) return { x: p.moveX / inputMag, z: p.moveZ / inputMag };
+    const remembered = Math.hypot(p.lastMoveX, p.lastMoveZ);
+    if (remembered > 0.001) return { x: p.lastMoveX / remembered, z: p.lastMoveZ / remembered };
+    return null;
   }
 
   private respawnPlayer(p: Player) {
@@ -524,10 +622,14 @@ export class World {
   }
 
   private bankStep(p: Player, dt: number, byId: Map<number, Marble>) {
-    if (!p.alive || p.cluster.length === 0) return;
+    if (!p.alive || p.cluster.length === 0) {
+      p.bankRunActive = false;
+      return;
+    }
     const goal = this.bankGoalForPlayer(p);
     if (!goal) {
       this.bankDrain[p.id] = 0;
+      p.bankRunActive = false;
       return;
     }
     const botAssist = p.isBot && this.tutorialBotAssistActive();
@@ -538,6 +640,7 @@ export class World {
     const bankRate = CONFIG.bank.drainPerSec * (botAssist ? TUTORIAL_BOT_BANK_MULT : 1);
     this.bankDrain[p.id] += bankRate * dt;
     while (this.bankDrain[p.id] >= 1 && p.cluster.length > 0) {
+      const streakBonus = botAssist ? 0 : this.ensureBankRun(p, goal);
       this.bankDrain[p.id] -= 1;
       const id = p.cluster.shift()!;
       const m = byId.get(id);
@@ -545,6 +648,7 @@ export class World {
       let pts = m.value;
       if (m.painted && m.paintedBy === p.id) pts *= CONFIG.bank.paintBonus;
       if (this.hasPU(p, "doubleScore")) pts *= 2;
+      pts += streakBonus;
       if (botAssist && p.score + pts > TUTORIAL_BOT_SCORE_CAP) {
         p.cluster.unshift(id);
         this.bankDrain[p.id] = 0;
@@ -562,6 +666,42 @@ export class World {
       });
       this.recycleMarble(m);
     }
+    if (p.cluster.length === 0) p.bankRunActive = false;
+  }
+
+  private ensureBankRun(p: Player, goal: Goal): number {
+    if (!p.bankRunActive) {
+      const chained = p.bankStreak > 0 && this.time <= p.bankStreakUntil;
+      p.bankStreak = Math.min(CONFIG.bank.streakMax, (chained ? p.bankStreak : 0) + 1);
+      p.bankStreakUntil = this.time + CONFIG.bank.streakWindow;
+      p.bankRunActive = true;
+      const bonus = this.bankStreakBonus(p);
+      if (bonus > 0) {
+        this.fx.push({
+          kind: "bankStreak",
+          x: goal.pos.x,
+          z: goal.pos.z,
+          color: p.colorHex,
+          streak: p.bankStreak,
+          bonus,
+        });
+      }
+    }
+    return this.bankStreakBonus(p);
+  }
+
+  private bankStreakBonus(p: Player) {
+    return Math.max(0, Math.min(CONFIG.bank.streakMax, p.bankStreak) - 1);
+  }
+
+  private updateBankStreakTimer(p: Player) {
+    if (p.bankStreak > 0 && !p.bankRunActive && this.time > p.bankStreakUntil) this.resetBankStreak(p);
+  }
+
+  private resetBankStreak(p: Player) {
+    p.bankStreak = 0;
+    p.bankStreakUntil = 0;
+    p.bankRunActive = false;
   }
 
   private bankGoalForPlayer(p: Player): Goal | null {
@@ -775,6 +915,7 @@ export class World {
     body.vy = 0;
     if ("cluster" in body) {
       // player falling: drop the whole cluster (scatter) — fall-scoring nuance
+      this.resetBankStreak(body);
       this.dropCluster(body, true);
       this.fx.push({ kind: "fall", x: body.pos.x, z: body.pos.z });
     } else {
@@ -1052,16 +1193,17 @@ export class World {
     p.botTimer -= dt;
     const assist = this.tutorialBotAssistActive();
     const difficulty = BOT_DIFFICULTIES[this.botDifficulty];
-    const skill = clamp(CONFIG.bot.skill * difficulty.skillMult * (assist ? 0.55 : 1), 0.05, 1);
+    const personality = p.botPersonality ? BOT_PERSONALITIES[p.botPersonality] : BOT_PERSONALITIES.collector;
+    const skill = clamp(CONFIG.bot.skill * difficulty.skillMult * personality.skillMult * (assist ? 0.55 : 1), 0.05, 1);
     const goal = this.goals[p.id];
 
     // periodic high-level decision
     if (p.botTimer <= 0) {
-      p.botTimer = CONFIG.bot.retargetEvery * (assist ? 1.45 : difficulty.retargetMult) * (0.7 + this.rng() * 0.6);
+      p.botTimer = CONFIG.bot.retargetEvery * personality.retargetMult * (assist ? 1.45 : difficulty.retargetMult) * (0.7 + this.rng() * 0.6);
       const timeLeft = this.roundTime;
-      if (p.cluster.length >= CONFIG.bot.bankWhenCluster || timeLeft < CONFIG.bot.bankWhenTimeLeft) {
+      if (p.cluster.length >= personality.bankWhenCluster || timeLeft < CONFIG.bot.bankWhenTimeLeft) {
         p.botState = "bank";
-      } else if (this.rng() < CONFIG.bot.attackChance * difficulty.attackMult * skill && p.cluster.length < 5) {
+      } else if (this.rng() < CONFIG.bot.attackChance * difficulty.attackMult * personality.attackMult * skill && p.cluster.length <= personality.attackClusterMax) {
         // find a juicy carrier to rob
         let best = -1;
         let bestScore = 0;
@@ -1082,7 +1224,7 @@ export class World {
       }
       // retarget nearest marble for collect/search
       if (p.botState === "collect") {
-        p.botTargetMarble = this.nearestFreeMarble(p.pos);
+        p.botTargetMarble = this.nearestFreeMarble(p.pos, personality.jumboBias);
         if (p.botTargetMarble < 0) p.botState = "bank";
       }
       // opportunistic activation of held powerup
@@ -1104,7 +1246,7 @@ export class World {
       if (o && o.alive) {
         tx = o.pos.x;
         tz = o.pos.z;
-        if (dist(p.pos, o.pos) < 3) dash = this.rng() < 0.05;
+        if (dist(p.pos, o.pos) < 3) dash = this.rng() < personality.dashChance * difficulty.attackMult;
       } else p.botState = "collect";
     } else {
       // collect / search
@@ -1115,7 +1257,7 @@ export class World {
         tz = m.pos.z;
         magnet = true;
       } else {
-        p.botTargetMarble = this.nearestFreeMarble(p.pos);
+        p.botTargetMarble = this.nearestFreeMarble(p.pos, personality.jumboBias);
         magnet = true;
       }
     }
@@ -1142,7 +1284,7 @@ export class World {
     dx += (this.rng() - 0.5) * jitter;
     dz += (this.rng() - 0.5) * jitter;
 
-    this.setInput(p.id, { moveX: dx, moveZ: dz, magnet, dash, activate: false });
+    this.setInput(p.id, { moveX: dx * personality.speedMult, moveZ: dz * personality.speedMult, magnet, dash, activate: false });
   }
 
   private tutorialBotAssistActive(): boolean {
@@ -1169,13 +1311,13 @@ export class World {
     }
   }
 
-  private nearestFreeMarble(from: { x: number; z: number }): number {
+  private nearestFreeMarble(from: { x: number; z: number }, jumboBias = 0.4): number {
     let best = -1;
     let bestD = Infinity;
     for (const m of this.marbles) {
       if (m.state !== "free" || m.y < 0) continue;
       const d = dist2(from, m.pos);
-      const w = m.isJumbo ? d * 0.4 : d; // bias toward jumbos
+      const w = m.isJumbo ? d * jumboBias : d; // lower bias means stronger preference for jumbos
       if (w < bestD) {
         bestD = w;
         best = m.id;

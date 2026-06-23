@@ -2,6 +2,8 @@ import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { Arena } from "../sim/arena";
+import { SceneBadge } from "./SceneBadge";
+import { OBSTACLE_AFFORDANCE } from "./affordanceLabels";
 
 export function Obstacles({ world }: { world: Arena }) {
   return (
@@ -45,6 +47,13 @@ function GoalButtonViz({ world, idx }: { world: Arena; idx: number }) {
         <ringGeometry args={[0.18, 0.28, 16]} />
         <meshBasicMaterial color="#ffffff" transparent opacity={0.8} side={THREE.DoubleSide} />
       </mesh>
+      <SceneBadge
+        label={OBSTACLE_AFFORDANCE.goalButton.label}
+        color={color}
+        position={[0, 0.76, 0]}
+        scale={[1.2, 0.38, 1]}
+        opacity={0.9}
+      />
     </group>
   );
 }
@@ -76,6 +85,13 @@ function AutoGoalRingViz({ world, idx }: { world: Arena; idx: number }) {
           );
         })}
       </group>
+      <SceneBadge
+        label={OBSTACLE_AFFORDANCE.autoGoalRing.label}
+        color="#3aa0ff"
+        position={[0, 0.78, 0]}
+        scale={[1.12, 0.38, 1]}
+        opacity={0.88}
+      />
       <pointLight color="#3aa0ff" intensity={2.5} distance={5} position={[0, 0.6, 0]} />
     </group>
   );

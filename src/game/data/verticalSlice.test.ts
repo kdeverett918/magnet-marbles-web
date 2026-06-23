@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { BOT_DIFFICULTIES, CONFIG, MODES, POWERUP_META } from "./config";
+import {
+  ADVANCED_POWERUPS,
+  ALL_GAMEPLAY_POWERUPS,
+  BOT_DIFFICULTIES,
+  BOT_PERSONALITIES,
+  CONFIG,
+  CORE_POWERUPS,
+  MODES,
+  POWERUP_META,
+} from "./config";
 import { DEFAULT_PROGRESSION, TRAIL_COSMETICS, dailyChallengeFor, getTrailCosmetic } from "./progression";
 import { makeWorld, type World } from "../sim/world";
 
@@ -72,6 +81,7 @@ describe("AA vertical slice contract", () => {
   });
 
   it("keeps the launch powerup pool focused on Magnet Burst, Shock Pulse, and Heavy Core", () => {
+    expect(CORE_POWERUPS).toEqual([...MVP_POWERUPS]);
     const labels = MVP_POWERUPS.map((type) => POWERUP_META[type].label);
     expect(labels).toEqual(["Magnet Burst", "Shock Pulse", "Heavy Core"]);
     expect(POWERUP_META.magnetBurst.desc).toContain("Stronger pull");
@@ -88,6 +98,30 @@ describe("AA vertical slice contract", () => {
       }
     }
     expect([...seen].sort()).toEqual([...MVP_POWERUPS].sort());
+  });
+
+  it("ramps advanced powerups after the first clean round", () => {
+    const seenAdvanced = new Set<string>();
+    for (let seed = 1; seed <= 160; seed++) {
+      const world = makeWorld("classic", 4, seed);
+      world.startMatch();
+
+      world.round = 2;
+      world.startRound();
+      for (const pickup of world.pickups) {
+        expect(ALL_GAMEPLAY_POWERUPS).toContain(pickup.type);
+        if (ADVANCED_POWERUPS.includes(pickup.type)) seenAdvanced.add(pickup.type);
+      }
+
+      world.round = 3;
+      world.startRound();
+      for (const pickup of world.pickups) {
+        expect(ALL_GAMEPLAY_POWERUPS).toContain(pickup.type);
+        if (ADVANCED_POWERUPS.includes(pickup.type)) seenAdvanced.add(pickup.type);
+      }
+    }
+
+    expect([...seenAdvanced].sort()).toEqual([...ADVANCED_POWERUPS].sort());
   });
 
   it("keeps the launch meta loop: six marble skin/trail cosmetics, stars, unlocks, and daily challenge", () => {
@@ -124,14 +158,33 @@ describe("AA vertical slice contract", () => {
     expect(BOT_DIFFICULTIES.hard.skillMult).toBeGreaterThan(BOT_DIFFICULTIES.normal.skillMult);
   });
 
+  it("gives the three solo bots distinct readable play styles", () => {
+    const world = makeWorld("classic", 4, 20260622, { tutorialAssist: false });
+
+    expect(Object.keys(BOT_PERSONALITIES)).toEqual(["collector", "bruiser", "banker"]);
+    expect(CONFIG.bot.personalities).toBe(BOT_PERSONALITIES);
+    expect(world.players.filter((player) => player.isBot).map((player) => player.botPersonality)).toEqual([
+      "collector",
+      "bruiser",
+      "banker",
+    ]);
+    expect(BOT_PERSONALITIES.collector.bankWhenCluster).toBeGreaterThan(BOT_PERSONALITIES.banker.bankWhenCluster);
+    expect(BOT_PERSONALITIES.bruiser.attackMult).toBeGreaterThan(BOT_PERSONALITIES.collector.attackMult);
+    expect(BOT_PERSONALITIES.banker.retargetMult).toBeLessThan(BOT_PERSONALITIES.collector.retargetMult);
+  });
+
   it("keeps the magnet/carry tuning readable and mastery-friendly", () => {
     expect(CONFIG.magnet.radius).toBeGreaterThan(CONFIG.player.radius * 4);
     expect(CONFIG.magnet.burstForceMult).toBeGreaterThan(1);
     expect(CONFIG.magnet.clusterCap).toBe(18);
     expect(CONFIG.carry.perRing).toBeGreaterThanOrEqual(6);
+    expect(CONFIG.carry.speedPenaltyPerMarble).toBeGreaterThan(0);
+    expect(CONFIG.carry.minSpeedMultiplier).toBeGreaterThanOrEqual(0.75);
     expect(CONFIG.bot.bankWhenCluster).toBeLessThan(CONFIG.magnet.clusterCap);
     expect(CONFIG.king.scoreEvery).toBe(2);
     expect(CONFIG.powerups.spawnCount).toBe(3);
+    expect(CONFIG.bank.streakWindow).toBeGreaterThanOrEqual(6);
+    expect(CONFIG.bank.streakMax).toBe(3);
   });
 
   it("proves the playable My Street-style core loop in the sim", () => {

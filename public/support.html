@@ -66,6 +66,14 @@
         text-decoration: none;
         background: rgba(255,255,255,0.08);
       }
+      code {
+        padding: 2px 6px;
+        border: 1px solid rgba(255,255,255,0.16);
+        border-radius: 8px;
+        color: #fff7d3;
+        background: rgba(0,0,0,0.24);
+        font-weight: 850;
+      }
     </style>
   </head>
   <body>
@@ -78,11 +86,14 @@
         <h2>Fast Fixes</h2>
         <ul>
           <li>If the game feels slow on a phone, open Options in the menu and choose Lite.</li>
-          <li>If the game is too loud, lower the SFX volume slider from the menu or pause options.</li>
+          <li>If the game is too loud, lower the SFX volume slider from the menu or pause options, then use Test SFX.</li>
           <li>If audio is silent, tap the screen once, then toggle Sound off and on.</li>
-          <li>If haptics feel distracting, use the Haptics toggle in the menu or pause options.</li>
+          <li>If haptics feel distracting, use the Haptics toggle in the menu or pause options; use Test Haptics to preview the vibration on supported phones.</li>
+          <li>If you want a clean profile, use Reset data in Options and confirm the reset.</li>
           <li>If online play stalls, wait up to 60 seconds for the server to wake, then retry.</li>
           <li>If the app looks stale after a deploy, refresh the page or clear site data.</li>
+          <li>If a reviewer asks for the Candidate ID, use the small Candidate stamp in the menu and compare it with <a href="./build.json">build.json</a>.</li>
+          <li>If the game shows Table reset needed, include the crash support code that starts with <code>MM-</code>.</li>
         </ul>
 
         <h2>Controls</h2>
@@ -95,11 +106,13 @@
 
         <h2>What To Include In A Bug Report</h2>
         <ul>
+          <li>The menu Candidate ID: commit and source fingerprint.</li>
+          <li>Any crash support code shown on the Table reset needed screen.</li>
           <li>Device model, browser, and operating system.</li>
           <li>Game mode, online room code if relevant, and what happened before the issue.</li>
           <li>A screenshot or screen recording when possible.</li>
           <li>Whether High or Lite quality was selected.</li>
-          <li>Whether Sound, SFX volume, and Haptics were enabled.</li>
+          <li>Whether Sound, SFX volume, Test SFX, Haptics, or Test Haptics changed the issue.</li>
         </ul>
 
         <p>
@@ -107,10 +120,27 @@
           The current web build has no purchases, ads, subscriptions, or paid cosmetics.
         </p>
 
+        <h2>Crash Recovery</h2>
+        <p>
+          If the game recovers to a Table reset needed screen, try Reload first. If it
+          repeats, include the visible crash support code, menu Candidate ID, and device
+          details in the report. The Reset local data button only clears Magnet Marbles
+          settings, tutorial progress, stars, daily records, and cosmetics for this site.
+        </p>
+
         <h2>Data Reset</h2>
         <p>
-          To reset settings, tutorial state, stars, daily challenge completion, and
-          skin/trail unlocks, clear site data for this domain in your browser settings.
+          To reset settings, tutorial state, stars, daily challenge completion, daily streaks,
+          and skin/trail unlocks, use the two-step Reset data control in Options. You can
+          also clear site data for this domain in your browser settings.
+        </p>
+
+        <h2>Candidate ID</h2>
+        <p>
+          The main menu shows a compact Candidate stamp with the current commit and source fingerprint.
+          For release QA, capture that stamp in screenshots or videos and verify it matches this build's
+          <a href="./build.json">build.json</a>. This keeps phone, online, and human review evidence tied
+          to the exact candidate that was tested.
         </p>
 
         <a class="home" href="./">Back to game</a>

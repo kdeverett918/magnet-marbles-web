@@ -15,6 +15,9 @@ type Target = { tx: number; tz: number; ty: number };
  */
 export class NetView {
   time = 0;
+  // Online positions are already eased toward server targets in tick(); the
+  // renderer should use them directly, so the interpolation factor is a constant 1.
+  renderAlpha = 1;
   phase: RoundPhase = "intro";
   round = 1;
   roundTime = 0;
@@ -67,9 +70,13 @@ export class NetView {
       p.colorIndex = sp.ci;
       p.teamId = sp.tm;
       p.score = sp.s;
+      p.bankStreak = sp.bs ?? 0;
+      p.bankStreakUntil = this.time + (sp.bt ?? 0);
+      p.bankRunActive = false;
       p.lives = sp.lv;
       p.alive = sp.al;
       p.isBot = sp.bot;
+      p.botPersonality = sp.bp ?? null;
       p.radius = 0.85;
       (p.cluster as number[]).length = sp.cl; // length is what the HUD reads
       p.magnetActive = sp.mag;
@@ -218,10 +225,11 @@ export class NetView {
       id, isBot: false, name: "", colorHex: "#fff", colorIndex: id, teamId: id,
       pos: { x: 0, z: 0 }, vel: { x: 0, z: 0 }, y: 0, vy: 0, radius: 0.85,
       score: 0, lives: 0, alive: true, respawnTimer: 0,
-      moveX: 0, moveZ: 0, wantMagnet: false, wantDash: false, wantActivate: false,
-      magnetActive: false, dashCooldown: 0, dashTimer: 0, cluster: [],
+      moveX: 0, moveZ: 0, lastMoveX: 0, lastMoveZ: 0, wantMagnet: false, wantDash: false, wantActivate: false,
+      magnetActive: false, dashCooldown: 0, dashTimer: 0, dashDirX: 0, dashDirZ: 0, cluster: [],
+      bankStreak: 0, bankStreakUntil: 0, bankRunActive: false,
       heldPowerup: null, activeUntil: {}, goalAngle: 0,
-      botState: "search", botTimer: 0, botTargetMarble: -1, botTargetPlayer: -1,
+      botState: "search", botPersonality: null, botTimer: 0, botTargetMarble: -1, botTargetPlayer: -1,
       lastBumpFx: 0, recentlyBanked: 0, tx: 0, tz: 0, ty: 0,
     };
   }

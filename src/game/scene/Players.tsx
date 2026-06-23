@@ -46,7 +46,16 @@ function PlayerMarble({ world, id }: { world: Arena; id: number }) {
     const g = group.current;
     if (!g) return;
     g.visible = p.alive || p.y < 0;
-    g.position.set(p.pos.x, p.y + p.radius, p.pos.z);
+    // render-interpolate between previous fixed-step pos and current (smooth on
+    // high-refresh / dropped frames); snap on teleports (respawn/knockoff reset).
+    const a = world.renderAlpha ?? 1;
+    const ppx = p.px ?? p.pos.x, ppz = p.pz ?? p.pos.z, ppy = p.py ?? p.y;
+    const pdx = p.pos.x - ppx, pdz = p.pos.z - ppz;
+    const pjumped = pdx * pdx + pdz * pdz > 16;
+    const rx = pjumped ? p.pos.x : ppx + pdx * a;
+    const rz = pjumped ? p.pos.z : ppz + pdz * a;
+    const ry = pjumped ? p.y : ppy + (p.y - ppy) * a;
+    g.position.set(rx, ry + p.radius, rz);
     if (ball.current) {
       // visual roll decoupled from velocity
       ball.current.rotation.x += p.vel.z * dt * 0.5;
@@ -77,7 +86,7 @@ function PlayerMarble({ world, id }: { world: Arena; id: number }) {
       }
     }
     if (shadowRef.current) {
-      shadowRef.current.position.set(p.pos.x, 0.02, p.pos.z);
+      shadowRef.current.position.set(rx, 0.02, rz);
       shadowRef.current.visible = p.alive && p.y >= -0.5;
     }
     if (marker.current) {

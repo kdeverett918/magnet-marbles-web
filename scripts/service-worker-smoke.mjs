@@ -161,6 +161,7 @@ async function run() {
 
   const oldCache = await fakeCaches.open("magnet-marbles-shell-old");
   await oldCache.put(`${ORIGIN}/audio/music.mp3`, new Response("old loud music", { status: 200 }));
+  await oldCache.put(`${ORIGIN}/audio/music.ogg`, new Response("old loud music variant", { status: 200 }));
   await oldCache.put(`${ORIGIN}/audio/sfx/pickup.mp3`, new Response("old pickup", { status: 200 }));
   await dispatchLifecycle(listeners.activate, "activate");
   assert(self.clients.claimCalled, "activate should claim clients");
@@ -170,6 +171,8 @@ async function run() {
   assert(musicResponse, "removed music fetch should be handled");
   assert(musicResponse.status === 410, `removed music should return 410, got ${musicResponse.status}`);
   assert(musicResponse.headers.get("cache-control") === "no-store", "removed music response should be no-store");
+  const musicVariantResponse = await dispatchFetch(listeners.fetch, request("/audio/music.ogg", { destination: "audio" }));
+  assert(musicVariantResponse?.status === 410, `removed music variants should return 410, got ${musicVariantResponse?.status}`);
 
   const buildRequest = request("/build.json", { destination: "document" });
   const buildNetwork = await dispatchFetch(listeners.fetch, buildRequest);
@@ -221,6 +224,7 @@ async function run() {
       "removed music is not precached",
       "activate deletes stale shell caches",
       "removed music returns 410 no-store",
+      "removed music format variants return 410",
       "build.json uses network-first cache fallback",
       "index.html falls back to app shell",
       "static audio/assets use cache-first",

@@ -1,8 +1,5 @@
 const CACHE_PREFIX = "magnet-marbles-shell";
-const CACHE_NAME = `${CACHE_PREFIX}-v2`;
-const REMOVED_AUDIO_PATHS = new Set([
-  "/audio/music.mp3",
-]);
+const CACHE_NAME = `${CACHE_PREFIX}-v4`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -52,9 +49,13 @@ async function purgeRemovedAssets() {
     const requests = await cache.keys();
     await Promise.all(requests.map((request) => {
       const url = new URL(request.url);
-      return REMOVED_AUDIO_PATHS.has(url.pathname) ? cache.delete(request) : Promise.resolve(false);
+      return isRemovedAudioPath(url.pathname) ? cache.delete(request) : Promise.resolve(false);
     }));
   }));
+}
+
+function isRemovedAudioPath(pathname) {
+  return /^\/audio\/music\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(pathname);
 }
 
 function sameOrigin(request) {
@@ -103,7 +104,7 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET" || !sameOrigin(request)) return;
 
   const url = new URL(request.url);
-  if (REMOVED_AUDIO_PATHS.has(url.pathname)) {
+  if (isRemovedAudioPath(url.pathname)) {
     event.respondWith(removedAudioResponse());
     return;
   }

@@ -8,6 +8,8 @@ const INCLUDED_DIRS = ["src", "server/src", "server/scripts", "server/vendor/nan
 const INCLUDED_FILES = [
   ".github/workflows/ci.yml",
   ".github/workflows/deploy-monitor.yml",
+  "docs/DEVICE_QA_CHECKLIST.md",
+  "docs/HUMAN_AA_REVIEW_CHECKLIST.md",
   "package.json",
   "package-lock.json",
   "render.yaml",

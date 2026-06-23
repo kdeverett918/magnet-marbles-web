@@ -13,10 +13,11 @@ Budget authorized by user: `$400`.
 | 2026-06-21 | Ludo `createSoundEffect` | Magnet Burst | 2 credits | Makes the strongest magnet moment audible. | `public/audio/sfx/magnet-burst.mp3` |
 | 2026-06-21 | Ludo `createSoundEffect` | Fall/rim cue | 2 credits | Adds consequence and table-edge tension. | `public/audio/sfx/fall.mp3` |
 | 2026-06-21 | Local procedural generator | PWA icons and social preview | `$0` | Replaces favicon-only install art with correctly sized mobile launch assets, maskable icon, and share card. | `public/icons/*.png`, `public/social-card.png`, `scripts/generate-icons.mjs` |
-| 2026-06-22 | Local removal | Removed arcade music bed | `$0` | Current loop was too loud and hurt the feel; the web build is SFX-only until a quieter, reviewed loop is added. | Runtime music removed; `public/audio/music.mp3` no longer ships and the service worker purges/blocks the old path |
+| 2026-06-22 | Local removal | Removed arcade music bed | `$0` | Current loop was too loud and hurt the feel; the web build is SFX-only until a quieter, reviewed loop is added. | Runtime music removed; `public/audio/music.*` no longer ships, app boot blocks stale music playback and purges stale entries, and the service worker purges/blocks old music paths |
 | 2026-06-22 | Local tuning | SFX master volume control | `$0` | Keeps generated SFX punchy without being loud by default; gives players a menu/pause volume slider. | `src/game/audio/sfx.ts`, `src/game/store.ts`, `src/game/ui/MainMenu.tsx`, `src/game/ui/Overlays.tsx` |
+| 2026-06-22 | Local tuning | Haptic preview control | `$0` | Lets players test phone vibration feel before or during a match without entering gameplay. | `src/game/haptics/haptics.ts`, `src/game/ui/MainMenu.tsx`, `src/game/ui/Overlays.tsx` |
 
-Tracked total this pass: `12` Ludo credits. No Meshy/paid 3D generation used; icon/share art is locally generated. No audible background music currently ships, SFX defaults to `65%` master volume, and `npm run assets:smoke` plus `npm run dist:budget` fail if `audio/music.mp3` ships again.
+Tracked total this pass: `12` Ludo credits. No Meshy/paid 3D generation used; icon/share art is locally generated. No audible background music currently ships, stale `audio/music.*` variants are blocked and purged at app boot/service-worker activation, SFX defaults to `28%` master volume with an added output trim, old saved loud SFX volumes are capped once by settings migration, haptics can be previewed from Options, and `npm run assets:smoke` plus `npm run dist:budget` fail if `audio/music.*` ships again.
 
 ## Policy
 
