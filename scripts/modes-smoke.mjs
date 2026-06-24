@@ -232,7 +232,7 @@ async function run() {
       for (const expected of mode.hudIncludes ?? []) {
         if (!gameReady.hudText.includes(expected)) throw new Error(`${mode.name}: HUD missing '${expected}'`);
       }
-      for (const expected of ["Quit to menu", "Dash", "Hold magnet"]) {
+      for (const expected of ["Pause game", "Dash", "Hold magnet"]) {
         if (!gameReady.buttonLabels.some((button) => `${button.ariaLabel || ""} ${button.text || ""}`.includes(expected))) {
           throw new Error(`${mode.name}: gameplay control missing accessible name: ${expected}`);
         }

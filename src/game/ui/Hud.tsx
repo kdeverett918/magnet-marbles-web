@@ -14,7 +14,8 @@ export function Hud() {
   const online = useGame((s) => s.online);
   const togglePaused = useGame((s) => s.togglePaused);
   const colorAssist = useGame((s) => s.settings.colorAssist);
-  const playing = hud.phase === "playing" || hud.phase === "intro";
+  const activePlay = hud.phase === "playing";
+  const playing = activePlay || hud.phase === "intro";
 
   const you = humanHudPlayer(hud);
   const low = hud.roundTime <= 10;
@@ -37,7 +38,7 @@ export function Hud() {
   if (!playing) return null;
 
   return (
-    <div className={`hud ${showCoach ? "tutorial-coach" : ""}`}>
+    <div className={`hud ${showCoach ? "tutorial-coach" : ""} ${feedback ? "has-feedback" : ""} ${rimDanger ? "has-rim-warning" : ""}`}>
       <div className="topbar">
         <div className="scoreboard">
           {hud.players.map((p) => (
@@ -70,41 +71,45 @@ export function Hud() {
         <div style={{ width: 80 }} />
       </div>
 
-      <div className="objective-chip" aria-describedby="hud-objective-status">
-        <span className="objective-text">{objective}</span>
-        {showCoach && (
-          <div className="coach-steps" aria-label="First round coach">
-            {coachSteps.map((step, index) => (
-              <span key={step.key} className={`coach-step ${step.state}`} aria-label={`${step.label}: ${step.detail}, ${step.state}`}>
-                <b>{index + 1}</b>
-                <span>{step.label}</span>
-              </span>
-            ))}
+      {activePlay && (
+        <>
+          <div className="objective-chip" aria-describedby="hud-objective-status">
+            <span className="objective-text">{objective}</span>
+            {showCoach && (
+              <div className="coach-steps" aria-label="First round coach">
+                {coachSteps.map((step, index) => (
+                  <span key={step.key} className={`coach-step ${step.state}`} aria-label={`${step.label}: ${step.detail}, ${step.state}`}>
+                    <b>{index + 1}</b>
+                    <span>{step.label}</span>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
-      <div id="hud-objective-status" className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-        {objectiveAnnouncement}
-        {raceStatus ? ` Race status: ${raceStatus.label}, ${raceStatus.detail}.` : ""}
-        {rimDanger ? ` Rim danger: ${rimDanger.label}, ${rimDanger.detail}.` : ""}
-        {showCoach ? ` First round coach: ${coachSteps.map((step) => `${step.label} ${step.state}`).join(", ")}.` : ""}
-      </div>
+          <div id="hud-objective-status" className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+            {objectiveAnnouncement}
+            {raceStatus ? ` Race status: ${raceStatus.label}, ${raceStatus.detail}.` : ""}
+            {rimDanger ? ` Rim danger: ${rimDanger.label}, ${rimDanger.detail}.` : ""}
+            {showCoach ? ` First round coach: ${coachSteps.map((step) => `${step.label} ${step.state}`).join(", ")}.` : ""}
+          </div>
+        </>
+      )}
 
-      {raceStatus && (
+      {activePlay && raceStatus && (
         <div className={`race-chip ${raceStatus.tone}`} aria-label={`Race status: ${raceStatus.label}. ${raceStatus.detail}.`}>
           <span>{raceStatus.label}</span>
           <small>{raceStatus.detail}</small>
         </div>
       )}
 
-      {rimDanger && (
+      {activePlay && rimDanger && (
         <div className={`rim-warning ${rimDanger.tone}`} aria-label={`Rim danger: ${rimDanger.label}. ${rimDanger.detail}.`}>
           <span>{rimDanger.label}</span>
           <small>{rimDanger.detail}</small>
         </div>
       )}
 
-      {feedback && (
+      {activePlay && feedback && (
         <div key={feedback.id} className={`toast feedback-toast ${feedback.tone}`} role="status" aria-live="polite">
           <strong>{feedback.title}</strong>
           <span>{feedback.detail}</span>
@@ -112,7 +117,7 @@ export function Hud() {
       )}
 
       {/* active buffs */}
-      {hud.activePowerups.length > 0 && (
+      {activePlay && hud.activePowerups.length > 0 && (
         <div className="buffs">
           {hud.activePowerups.map((b) => {
             const meta = POWERUP_META[b.type];
@@ -128,7 +133,7 @@ export function Hud() {
       )}
 
       {/* cluster meter */}
-      {you && (
+      {activePlay && you && (
         <div className="cluster">
           <div
             className="meter"

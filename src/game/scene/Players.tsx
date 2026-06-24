@@ -35,6 +35,7 @@ function PlayerMarble({ world, id }: { world: Arena; id: number }) {
   const sphereSegments: [number, number] = lite ? [32, 20] : [48, 32];
   const group = useRef<THREE.Group>(null);
   const ball = useRef<THREE.Mesh>(null);
+  const humanHaloRef = useRef<THREE.Mesh>(null);
   const ringRef = useRef<THREE.Mesh>(null);
   const heavyRef = useRef<THREE.Mesh>(null);
   const shadowRef = useRef<THREE.Mesh>(null);
@@ -89,11 +90,20 @@ function PlayerMarble({ world, id }: { world: Arena; id: number }) {
       shadowRef.current.position.set(rx, 0.02, rz);
       shadowRef.current.visible = p.alive && p.y >= -0.5;
     }
+    if (humanHaloRef.current) {
+      humanHaloRef.current.visible = isHuman && p.alive;
+      if (isHuman) {
+        const pulse = 1 + Math.sin(world.time * 5.5) * 0.08;
+        humanHaloRef.current.scale.setScalar(pulse);
+        const m = humanHaloRef.current.material as THREE.MeshBasicMaterial;
+        m.opacity = 0.52 + Math.sin(world.time * 5.5) * 0.12;
+      }
+    }
     if (marker.current) {
       marker.current.visible = isHuman && p.alive;
       if (isHuman) {
-        marker.current.position.y = p.radius + 1.5 + Math.sin(world.time * 4) * 0.15;
-        marker.current.rotation.y += 0.04;
+        marker.current.position.y = p.radius + 1.65 + Math.sin(world.time * 4) * 0.12;
+        marker.current.rotation.y = Math.sin(world.time * 2.2) * 0.18;
       }
     }
   });
@@ -108,7 +118,7 @@ function PlayerMarble({ world, id }: { world: Arena; id: number }) {
     <>
       <group ref={group}>
         {showTrail ? (
-          <Trail width={p.radius * 4.5 * (cosmetic?.widthMult ?? 1)} length={cosmetic?.length ?? 4} color={trailColor} attenuation={(t) => t * t} decay={1.4}>
+          <Trail width={p.radius * (isHuman ? 6.2 : 4.5) * (cosmetic?.widthMult ?? 1)} length={cosmetic?.length ?? 4} color={trailColor} attenuation={(t) => t * t} decay={1.4}>
             {marble}
           </Trail>
         ) : marble}
@@ -122,8 +132,14 @@ function PlayerMarble({ world, id }: { world: Arena; id: number }) {
           <ringGeometry args={[0.9, 1.0, 48]} />
           <meshBasicMaterial color={p.colorHex} transparent opacity={0.3} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} depthWrite={false} />
         </mesh>
+        {isHuman && (
+          <mesh ref={humanHaloRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -p.radius + 0.075, 0]} renderOrder={2}>
+            <ringGeometry args={[p.radius * 1.95, p.radius * 2.45, 64]} />
+            <meshBasicMaterial color="#8ff7ff" transparent opacity={0.58} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} depthWrite={false} />
+          </mesh>
+        )}
         {/* glow halo */}
-        <pointLight color={p.colorHex} intensity={2.2} distance={4} />
+        <pointLight color={p.colorHex} intensity={isHuman ? 3.4 : 2.2} distance={isHuman ? 5.2 : 4} />
         <mesh ref={heavyRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -p.radius + 0.09, 0]} visible={false}>
           <ringGeometry args={[p.radius * 1.55, p.radius * 1.82, 36]} />
           <meshBasicMaterial color="#d7e2ff" transparent opacity={0.34} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} depthWrite={false} />
@@ -132,12 +148,16 @@ function PlayerMarble({ world, id }: { world: Arena; id: number }) {
         {/* "YOU" marker — downward chevron above the human's marble */}
         <group ref={marker} visible={false} position={[0, p.radius + 1.5, 0]}>
           <mesh rotation={[Math.PI, 0, 0]}>
-            <coneGeometry args={[0.32, 0.5, 4]} />
-            <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={1.6} />
+            <coneGeometry args={[0.48, 0.68, 4]} />
+            <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={2.2} />
           </mesh>
           <mesh position={[0, 0.45, 0]}>
-            <sphereGeometry args={[0.12, 12, 10]} />
-            <meshStandardMaterial color={p.colorHex} emissive={p.colorHex} emissiveIntensity={2} />
+            <sphereGeometry args={[0.16, 12, 10]} />
+            <meshStandardMaterial color={p.colorHex} emissive={p.colorHex} emissiveIntensity={2.4} />
+          </mesh>
+          <mesh position={[0, 0.78, 0]} rotation={[Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[0.34, 0.045, 8, 32]} />
+            <meshBasicMaterial color="#8ff7ff" transparent opacity={0.92} blending={THREE.AdditiveBlending} depthWrite={false} />
           </mesh>
         </group>
         {colorAssist && (

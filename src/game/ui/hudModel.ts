@@ -541,24 +541,24 @@ export function objectiveFor(hud: Hud, you: PlayerHud | undefined) {
   }
   if (hud.suddenDeath) return "Break the tie: bank one marble";
   if (!you) return "Collect marbles and bank at your goal";
-  if (you.bankStreak >= 2 && you.bankStreakBonus > 0 && you.bankStreakTimeLeft > 0 && you.cluster > 0) {
-    return `Streak ${you.bankStreak}: bank fast for +${you.bankStreakBonus} per marble`;
-  }
   if (hud.modeKind === "survival") {
     if (you.lives <= 1) return "Final life: avoid the rim and use pulses defensively";
-    return "Survive the rim, steal safely, and outlast the table";
+    return "Stay on the table: survive the rim and outlast rivals";
   }
   if (hud.modeKind === "team-bank") return "Bank at either team goal - your team shares points";
   const stealTarget = stealTargetFor(hud, you);
-  if (hud.modeKind === "battle") return stealTarget && you.cluster <= 0 ? `Dash into loaded ${playerMarker(stealTarget.id)} to steal` : you.cluster >= 3 ? "Dash into carriers to steal and score" : "Collect a load or ram loaded rivals";
+  if (hud.modeKind === "battle")
+    return stealTarget && you.cluster <= 0
+      ? `Dash into loaded ${playerMarker(stealTarget.id)} to steal`
+      : you.cluster >= 3
+        ? "Dash into carriers to steal and score"
+        : "Collect a load or dash into loaded rivals";
   if (hud.modeKind === "king-magnet") {
-    return you.cluster >= 5 ? "Hold the biggest cluster to score every 2 seconds" : "Build the biggest cluster to become King Magnet";
+    return you.cluster >= 5 ? "Carry the largest cluster to score every 2 seconds" : "Build and carry the largest cluster to become King Magnet";
   }
-  if (stealTarget && you.cluster <= 0) return `Bump loaded ${playerMarker(stealTarget.id)} or build a haul`;
   if (hud.roundTime <= 12 && you.cluster > 0) return "Time is low: bank your haul";
   if (you.cluster >= Math.max(1, hud.clusterCap)) return "Cluster full: bank at your goal";
-  if (you.cluster >= 6) return "Bank now or risk a bigger haul";
-  return "Collect marbles, then bank at your goal";
+  return "Collect candy marbles, then bank at your goal";
 }
 
 export function objectiveAnnouncementFor(hud: Hud, objective: string) {

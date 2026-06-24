@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HAPTIC_PREVIEW_PATTERN, hapticPatternForEvent } from "./haptics";
+import { HAPTIC_PREVIEW_PATTERN, hapticPatternForEvent, vibrationAllowed } from "./haptics";
 
 describe("hapticPatternForEvent", () => {
   it("maps frequent collection feedback to short phone-safe pulses", () => {
@@ -24,5 +24,13 @@ describe("hapticPatternForEvent", () => {
 
   it("provides a distinct phone-safe haptic preview pattern", () => {
     expect(HAPTIC_PREVIEW_PATTERN).toEqual([8, 18, 12, 30, 18]);
+  });
+
+  it("skips browser vibration until user activation is available", () => {
+    const vibrate = () => true;
+
+    expect(vibrationAllowed({ vibrate, userActivation: { isActive: false, hasBeenActive: false } })).toBe(false);
+    expect(vibrationAllowed({ vibrate, userActivation: { hasBeenActive: true } })).toBe(true);
+    expect(vibrationAllowed({ vibrate })).toBe(true);
   });
 });

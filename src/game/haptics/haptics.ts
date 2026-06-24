@@ -11,6 +11,20 @@ const TOUCH_PATTERNS: Record<TouchHaptic, HapticPattern> = {
   magnet: 6,
 };
 
+interface VibratingNavigator {
+  vibrate?: (pattern: HapticPattern) => boolean;
+  userActivation?: {
+    hasBeenActive?: boolean;
+    isActive?: boolean;
+  };
+}
+
+export function vibrationAllowed(nav: VibratingNavigator | undefined = typeof navigator !== "undefined" ? navigator : undefined) {
+  if (typeof nav?.vibrate !== "function") return false;
+  const activation = nav.userActivation;
+  return !activation || activation.hasBeenActive === true || activation.isActive === true;
+}
+
 export function hapticPatternForEvent(ev: FxEvent): HapticPattern | null {
   switch (ev.kind) {
     case "pickup":
@@ -56,11 +70,11 @@ class HapticsEngine {
   }
 
   cancel() {
-    if (this.supported()) navigator.vibrate(0);
+    if (vibrationAllowed()) navigator.vibrate(0);
   }
 
   pulse(pattern: HapticPattern, minGapMs = 42) {
-    if (!this.enabled || !this.supported()) return false;
+    if (!this.enabled || !vibrationAllowed()) return false;
     const t = nowMs();
     if (t - this.lastPulseAt < minGapMs) return false;
     this.lastPulseAt = t;

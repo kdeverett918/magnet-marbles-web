@@ -7,30 +7,30 @@ export interface CameraShakeState {
   phase: number;
 }
 
-// Gentle, sparse "kick" only on the big moments — the camera otherwise stays
-// rock-still. Earlier values (knock-off 0.56, bank 0.46) jolted the whole view
-// on routine hits/steals during a 4-player scrum and read as "shaky".
+// Gentle, sparse "kick" only on the readable combat/scoring moments; tiny
+// pickups stay rock-still so the table remains legible on phone screens.
 export function cameraImpulseForEvent(ev: FxEvent) {
   switch (ev.kind) {
     case "pickup":
     case "cluster":
+      return 0;
     case "hit":
-      return 0; // routine, very frequent — no shake
+      return 0.07;
     case "bank":
-      return ev.big ? 0.16 : 0;
+      return ev.big ? 0.22 : 0.09;
     case "bankStreak":
       return 0.1 + ev.bonus * 0.03;
     case "steal":
-      return 0.1;
+      return 0.3;
     case "knockoff":
-      return 0.2;
+      return 0.36;
     case "paint":
       return 0.08;
     case "powerup":
-      if (ev.type === "shockPulse") return 0.14;
+      if (ev.type === "shockPulse") return 0.16;
       return 0;
     case "fall":
-      return 0.12;
+      return 0.14;
   }
 }
 
@@ -39,8 +39,8 @@ export function addCameraImpulse(state: CameraShakeState, ev: FxEvent, simTime: 
   if (impulse <= 0) return;
   const carry = state.time < state.duration ? state.amplitude * (1 - state.time / state.duration) * 0.3 : 0;
   state.time = 0;
-  state.duration = Math.min(0.3, 0.12 + impulse * 0.28);
-  state.amplitude = Math.min(0.26, impulse + carry);
+  state.duration = Math.min(0.34, 0.12 + impulse * 0.28);
+  state.amplitude = Math.min(0.42, impulse + carry);
   state.phase = (simTime * 19.37 + ev.x * 0.73 + ev.z * 1.41) % (Math.PI * 2);
 }
 

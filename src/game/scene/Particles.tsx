@@ -99,19 +99,19 @@ export const Particles = forwardRef<ParticlesHandle>(function Particles(_props, 
           spawn(ev.count >= 10 ? 18 : 10, ev.x, 1.1, ev.z, ev.color, ev.count >= 10 ? 4.6 : 3.4, 5, 0.65, 0.13, -7, ev.count >= 18);
           break;
         case "bank":
-          spawn(ev.big ? 30 : 16, ev.x, 0.6, ev.z, ev.color, 5, 8, 0.9, 0.16, -9, true);
+          spawn(ev.big ? 54 : 28, ev.x, 0.65, ev.z, ev.color, ev.big ? 6.4 : 5.6, 9, 1.05, ev.big ? 0.2 : 0.17, -9, true);
           break;
         case "bankStreak":
-          spawn(18 + ev.bonus * 8, ev.x, 0.75, ev.z, ev.color, 6 + ev.bonus, 8, 0.85, 0.16, -8, true);
+          spawn(28 + ev.bonus * 10, ev.x, 0.75, ev.z, ev.color, 6.5 + ev.bonus, 8.5, 0.95, 0.18, -8, true);
           break;
         case "hit":
-          spawn(12, ev.x, 0.4, ev.z, "#fff0c0", 6, 4, 0.4, 0.1, -10);
+          spawn(18, ev.x, 0.45, ev.z, "#fff0c0", 7, 4.5, 0.45, 0.13, -10);
           break;
         case "steal":
-          spawn(14, ev.x, 0.5, ev.z, ev.color, 5, 5, 0.6, 0.12, -8);
+          spawn(28, ev.x, 0.55, ev.z, ev.color, 7, 6, 0.7, 0.16, -8, true);
           break;
         case "knockoff":
-          spawn(20, ev.x, 0.4, ev.z, "#aab0c0", 7, 6, 0.7, 0.12, -12);
+          spawn(34, ev.x, 0.45, ev.z, "#aab0c0", 8.5, 7, 0.82, 0.16, -12);
           break;
         case "paint":
           spawn(40, ev.x, 0.6, ev.z, ev.color, 6, 7, 1.0, 0.18, -7);

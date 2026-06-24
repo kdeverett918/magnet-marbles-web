@@ -19,7 +19,7 @@ export function Controls() {
   const [magnetOn, setMagnetOn] = useState(false);
   const rightGesture = useRef<(TouchPoint & { id: number }) | null>(null);
 
-  const inGame = (hud.phase === "intro" || hud.phase === "playing") && !paused;
+  const inGame = hud.phase === "playing" && !paused;
   if (!inGame) return null;
 
   const held = hud.heldPowerup;
@@ -27,6 +27,7 @@ export function Controls() {
   const dashReady = hud.dashCooldown <= 0;
   const dashCooldownLabel = Math.max(1, Math.ceil(hud.dashCooldown));
   const actionStatus = actionStatusFor(hud, magnetOn);
+  const showHints = hud.tutorialAssist && !hud.tutorialComplete;
   const setMag = (on: boolean) => {
     setMagnetOn(on);
     setTouchMagnetHeld(on);
@@ -58,7 +59,7 @@ export function Controls() {
 
   return (
     <div className="controls">
-      <JoystickZone />
+      <JoystickZone showHint={showHints} />
       <div
         className={`right-gesture-zone ${magnetOn ? "on" : ""}`}
         aria-hidden="true"
@@ -66,13 +67,15 @@ export function Controls() {
         onPointerUp={(e) => onRightUp(e)}
         onPointerCancel={(e) => onRightUp(e, true)}
       >
-        <div className="gesture-hint">
-          <span>hold magnet</span>
-          <span>tap / flick dash</span>
-        </div>
+        {showHints && (
+          <div className="gesture-hint">
+            <span>hold magnet</span>
+            <span>tap / flick dash</span>
+          </div>
+        )}
       </div>
 
-      <div className="move-hint">left thumb steers · right: magnet / dash / power</div>
+      {showHints && <div className="move-hint">drag to move · lower-right actions</div>}
 
       <div className="action-cluster">
         <div className="action-status" aria-hidden="true">
@@ -93,7 +96,7 @@ export function Controls() {
         <div className="act-col">
           <button
             type="button"
-            className={`act ${held ? "held" : "disabled"}`}
+            className={`act power ${held ? "held" : "disabled"}`}
             aria-label={heldMeta ? `Use ${heldMeta.label}: ${heldMeta.desc}` : "No powerup ready"}
             disabled={!held}
             onPointerDown={(e) => {
@@ -110,7 +113,7 @@ export function Controls() {
           </button>
           <button
             type="button"
-            className={`act ${dashReady ? "" : "disabled"}`}
+            className={`act dash ${dashReady ? "" : "disabled"}`}
             aria-label={dashReady ? "Dash ready" : `Dash cooling down ${dashCooldownLabel} seconds`}
             disabled={!dashReady}
             onPointerDown={(e) => {
@@ -127,7 +130,7 @@ export function Controls() {
 
         <button
           type="button"
-          className={`act big ${magnetOn ? "on" : ""}`}
+          className={`act magnet big ${magnetOn ? "on" : ""}`}
           aria-label={magnetOn ? "Magnet pulling" : "Hold magnet"}
           aria-pressed={magnetOn}
           onPointerDown={(e) => {
@@ -158,7 +161,7 @@ export function Controls() {
  */
 const JOY_RADIUS = 56;
 
-function JoystickZone() {
+function JoystickZone({ showHint }: { showHint: boolean }) {
   const origin = useRef<{ x: number; y: number } | null>(null);
   const pid = useRef<number | null>(null);
   const [knob, setKnob] = useState<{ ox: number; oy: number; kx: number; ky: number } | null>(null);
@@ -211,11 +214,13 @@ function JoystickZone() {
         <div className="joystick-base" style={{ left: knob.ox, top: knob.oy }}>
           <div className="joystick-knob" style={{ transform: `translate(${knob.kx}px, ${knob.ky}px)` }} />
         </div>
-      ) : (
+      ) : showHint ? (
         <div className="joystick-hint">
           <span className="joystick-hint-ring" />
           <span>steer</span>
         </div>
+      ) : (
+        <div className="joystick-idle" />
       )}
     </div>
   );

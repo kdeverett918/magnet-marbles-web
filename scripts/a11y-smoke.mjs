@@ -208,7 +208,7 @@ async function run() {
     }
 
     const playOnlineFocus = await focusByKeyboard(client, (name) => name.includes("play online"));
-    const singlePlayerFocus = await focusByKeyboard(client, (name) => name.includes("single player"));
+    const singlePlayerFocus = await focusByKeyboard(client, (name) => name.includes("single player"), 48);
     const focusOrder = [...playOnlineFocus.seen, ...singlePlayerFocus.seen];
 
     await space(client);
@@ -222,32 +222,34 @@ async function run() {
     })()`);
 
     const keyboardInput = await evaluate(client, `(async () => {
-      const controlsUrl = performance.getEntriesByType("resource")
-        .map((entry) => entry.name)
-        .find((name) => name.includes("/src/game/input/controls.ts")) ?? "/src/game/input/controls.ts";
-      const { input } = await import(controlsUrl);
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyW", key: "w", bubbles: true }));
       window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space", key: " ", bubbles: true, cancelable: true }));
-      const result = { moveZ: input.moveZ, magnet: input.magnet };
+      await wait(220);
+      const statusText = document.querySelector(".action-status")?.textContent?.replace(/\\s+/g, " ").trim() ?? "";
+      const magnetButton = [...document.querySelectorAll("button")]
+        .find((button) => ((button.getAttribute("aria-label") || "") + " " + (button.textContent || "")).toLowerCase().includes("magnet"));
+      const result = {
+        statusText,
+        magnetAria: magnetButton?.getAttribute("aria-label") ?? "",
+        hudText: document.body.innerText.slice(0, 360),
+      };
       window.dispatchEvent(new KeyboardEvent("keyup", { code: "KeyW", key: "w", bubbles: true }));
       window.dispatchEvent(new KeyboardEvent("keyup", { code: "Space", key: " ", bubbles: true }));
+      await wait(80);
       return result;
     })()`);
 
-    if (keyboardInput.moveZ >= 0 || keyboardInput.magnet !== true) {
-      throw new Error(`Keyboard gameplay input was not reflected in input state: ${JSON.stringify(keyboardInput)}`);
+    if (!keyboardInput.statusText.toLowerCase().replace(/\s+/g, "").includes("magnetpulling")) {
+      throw new Error(`Keyboard magnet input was not reflected in visible gameplay status: ${JSON.stringify(keyboardInput)}`);
     }
 
     const touchInput = await evaluate(client, `(async () => {
-      const controlsUrl = performance.getEntriesByType("resource")
-        .map((entry) => entry.name)
-        .find((name) => name.includes("/src/game/input/controls.ts")) ?? "/src/game/input/controls.ts";
-      const { input, clearEdges, setTouchMagnetHeld } = await import(controlsUrl);
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       const moveHint = document.querySelector(".move-hint");
       const rightZone = document.querySelector(".right-gesture-zone");
-      if (!moveHint || !rightZone) throw new Error("Touch gesture affordances missing");
-      setTouchMagnetHeld(false);
-      clearEdges();
+      const magnetButton = document.querySelector("button.act.magnet");
+      if (!rightZone || !magnetButton) throw new Error("Touch gesture affordances missing");
 
       const emit = (target, type, x, y, id) => {
         target.dispatchEvent(new PointerEvent(type, {
@@ -266,28 +268,38 @@ async function run() {
       const rightX = rightRect.left + rightRect.width * 0.58;
       const rightY = rightRect.bottom - 188;
       emit(rightZone, "pointerdown", rightX, rightY, 52);
-      const magnetDuringHold = input.magnet;
+      await wait(80);
+      const duringHold = {
+        magnetAria: magnetButton.getAttribute("aria-label"),
+        ariaPressed: magnetButton.getAttribute("aria-pressed"),
+        rightZoneOn: rightZone.classList.contains("on"),
+        statusText: document.querySelector(".action-status")?.textContent?.replace(/\\s+/g, " ").trim() ?? "",
+      };
       emit(rightZone, "pointerup", rightX + 2, rightY + 2, 52);
-      const dashAfterTap = input.dash;
-      const magnetAfterRelease = input.magnet;
-      clearEdges();
+      await wait(260);
+      const dashButton = document.querySelector("button.act.dash");
+      const afterRelease = {
+        magnetAria: magnetButton.getAttribute("aria-label"),
+        ariaPressed: magnetButton.getAttribute("aria-pressed"),
+        rightZoneOn: rightZone.classList.contains("on"),
+        dashAria: dashButton?.getAttribute("aria-label") ?? "",
+      };
 
       return {
-        moveHint: moveHint.textContent?.replace(/\\s+/g, " ").trim() ?? "",
-        magnetDuringHold,
-        dashAfterTap,
-        magnetAfterRelease,
+        moveHint: moveHint?.textContent?.replace(/\\s+/g, " ").trim() ?? "",
+        duringHold,
+        afterRelease,
       };
     })()`);
 
-    if (!touchInput.moveHint.toLowerCase().includes("drag to move")) {
-      throw new Error(`Direct-drag movement hint is missing: ${JSON.stringify(touchInput)}`);
+    if (touchInput.moveHint && !touchInput.moveHint.toLowerCase().includes("drag to move")) {
+      throw new Error(`Direct-drag movement hint has unexpected copy: ${JSON.stringify(touchInput)}`);
     }
-    if (touchInput.magnetDuringHold !== true || touchInput.magnetAfterRelease !== false) {
-      throw new Error(`Right-side touch hold did not map to magnet input: ${JSON.stringify(touchInput)}`);
+    if (touchInput.duringHold.ariaPressed !== "true" || !touchInput.duringHold.magnetAria.toLowerCase().includes("pulling")) {
+      throw new Error(`Right-side touch hold did not visibly map to magnet input: ${JSON.stringify(touchInput)}`);
     }
-    if (touchInput.dashAfterTap !== true) {
-      throw new Error(`Right-side touch tap did not trigger dash input: ${JSON.stringify(touchInput)}`);
+    if (touchInput.afterRelease.ariaPressed !== "false" || touchInput.afterRelease.rightZoneOn) {
+      throw new Error(`Right-side touch release did not clear magnet affordance: ${JSON.stringify(touchInput)}`);
     }
 
     const gameControls = await evaluate(client, `(() => {
@@ -303,88 +315,67 @@ async function run() {
       };
     })()`);
 
-    for (const expected of ["Quit to menu", "Dash", "Hold magnet"]) {
+    for (const expected of ["Pause game", "Dash", "Hold magnet"]) {
       if (!gameControls.buttons.some((button) => `${button.ariaLabel || ""} ${button.text || ""}`.includes(expected))) {
         throw new Error(`Gameplay control is missing accessible name: ${expected}`);
       }
     }
 
-    await evaluate(client, `(async () => {
-      const storeUrl = performance.getEntriesByType("resource")
-        .map((entry) => entry.name)
-        .find((name) => name.includes("/src/game/store.ts")) ?? "/src/game/store.ts";
-      const { getWorld, useGame } = await import(storeUrl);
-      const world = getWorld();
-      if (!world) throw new Error("World missing");
-      world.phase = "matchEnd";
-      world.round = world.mode.rounds;
-      world.winnerId = world.humanId;
-      for (const player of world.players) player.score = player.id === world.humanId ? 12 : player.id;
-      useGame.getState().pushHud({
-        phase: "matchEnd",
-        round: world.round,
-        totalRounds: world.mode.rounds,
-        roundTime: world.roundTime,
-        introCountdown: 0,
-        suddenDeath: false,
-        winnerId: world.winnerId,
-        humanId: world.humanId,
-        players: world.players.map((player) => ({
-          id: player.id,
-          name: player.name,
-          colorHex: player.colorHex,
-          score: player.score,
-          cluster: player.cluster.length,
-          isBot: player.isBot,
-          alive: player.alive,
-        })),
-        heldPowerup: null,
-        activePowerups: [],
-        dashCooldown: 0,
-        magnetActive: false,
-        clusterCap: 18,
-        tutorialAssist: false,
-        tutorialStep: "off",
-        tutorialGoalPulse: false,
-        tutorialComplete: true,
-      });
+    const pauseReady = await evaluate(client, `(() => {
+      const pause = [...document.querySelectorAll("button")].find((button) => button.getAttribute("aria-label") === "Pause game");
+      if (!pause) throw new Error("Pause game button missing");
+      pause.click();
       return true;
     })()`);
+    const pauseDialog = await waitFor(client, `(() => {
+      const dialog = document.querySelector('[role="dialog"][aria-modal="true"]');
+      const buttons = [...document.querySelectorAll("button")].map((button) => ({
+        text: (button.textContent || "").replace(/\\s+/g, " ").trim(),
+        ariaLabel: button.getAttribute("aria-label"),
+        disabled: button.disabled,
+      }));
+      return dialog && buttons.some((button) => ((button.ariaLabel || "") + " " + (button.text || "")).includes("Resume"))
+        && buttons.some((button) => ((button.ariaLabel || "") + " " + (button.text || "")).includes("Restart"))
+        && buttons.some((button) => ((button.ariaLabel || "") + " " + (button.text || "")).includes("Menu"))
+        ? { title: document.querySelector("#pause-title")?.textContent?.trim() ?? "", buttons }
+        : null;
+    })()`, "pause dialog");
 
-    const resultsReady = await waitFor(client, `(() => Boolean([...document.querySelectorAll("button")].some((button) => button.textContent?.includes("Play Again")) && [...document.querySelectorAll("button")].some((button) => button.textContent?.includes("Menu"))))()`, "results overlay");
-    const resultsMenuFocus = await focusByKeyboard(client, (name) => name.includes("menu"));
+    const pauseMenuFocus = await focusByKeyboard(client, (name) => name.includes("return to menu") || name === "menu", 18);
     await space(client);
-    await waitFor(client, `(() => Boolean(document.querySelector(".menu")))()`, "menu after results");
+    await waitFor(client, `(() => Boolean(document.querySelector(".menu")))()`, "menu after pause");
 
-    await evaluate(client, `(async () => {
-      const storeUrl = performance.getEntriesByType("resource")
-        .map((entry) => entry.name)
-        .find((name) => name.includes("/src/game/store.ts")) ?? "/src/game/store.ts";
-      const { useGame } = await import(storeUrl);
-      useGame.setState({
-        screen: "menu",
-        online: false,
-        net: {
-          status: "error",
-          roomId: "",
-          error: "Room not found. Check the code and retry.",
-          startedAt: 0,
-        },
-      });
-      return true;
+    const privateRoom = await evaluate(client, `(async () => {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const toggle = document.querySelector("button.room-toggle")
+        ?? [...document.querySelectorAll("button")].find((button) => button.textContent?.includes("Join with code"));
+      if (!toggle) throw new Error("Join with code button missing");
+      if (toggle.getAttribute("aria-expanded") !== "true") {
+        toggle.click();
+        const deadline = performance.now() + 2000;
+        while (!document.querySelector(".room-input") && performance.now() < deadline) await wait(50);
+      }
+      const input = document.querySelector(".room-input");
+      const playOnline = [...document.querySelectorAll("button")].find((button) => button.textContent?.includes("PLAY ONLINE"));
+      if (!input || !playOnline) throw new Error("Private room form did not render");
+      input.focus();
+      input.value = "A11YTEST";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      return {
+        inputAria: input.getAttribute("aria-label"),
+        inputValueLength: input.value.length,
+        toggleExpanded: toggle.getAttribute("aria-expanded"),
+        playOnlineText: playOnline.textContent?.replace(/\\s+/g, " ").trim(),
+        playOnlineDisabled: playOnline.disabled,
+      };
     })()`);
 
-    const retryState = await waitFor(client, `(() => {
-      const retry = [...document.querySelectorAll("button")].find((button) => button.textContent?.includes("RETRY ONLINE"));
-      const status = document.querySelector('[role="status"]');
-      return retry && status ? {
-        retryText: retry.textContent?.replace(/\\s+/g, " ").trim(),
-        statusText: status.textContent?.replace(/\\s+/g, " ").trim(),
-        retryDisabled: retry.disabled,
-      } : null;
-    })()`, "online retry state");
-
-    const retryFocus = await focusByKeyboard(client, (name) => name.includes("retry online"));
+    if (privateRoom.inputAria !== "Private room code" || privateRoom.toggleExpanded !== "true") {
+      throw new Error(`Private room form is not accessible: ${JSON.stringify(privateRoom)}`);
+    }
+    if (privateRoom.playOnlineDisabled || !privateRoom.playOnlineText.includes("PLAY ONLINE")) {
+      throw new Error(`Play Online button is not available after opening private room form: ${JSON.stringify(privateRoom)}`);
+    }
 
     const report = {
       url: URL_TO_TEST,
@@ -405,13 +396,13 @@ async function run() {
         hasObjective: gameControls.hasObjective,
         buttons: gameControls.buttons,
       },
-      results: {
-        ready: resultsReady,
-        menuFocus: resultsMenuFocus.active,
+      pause: {
+        ready: pauseReady,
+        dialog: pauseDialog,
+        menuFocus: pauseMenuFocus.active,
       },
-      onlineRetry: {
-        state: retryState,
-        focus: retryFocus.active,
+      privateRoom: {
+        state: privateRoom,
       },
     };
 

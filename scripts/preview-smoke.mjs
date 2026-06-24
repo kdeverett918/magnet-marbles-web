@@ -272,7 +272,7 @@ async function run() {
     if (!gameReady.touchZones?.gestureHint?.toLowerCase().includes("hold magnet")) {
       throw new Error(`Right-side gesture hint is missing expected copy: ${JSON.stringify(gameReady.touchZones)}`);
     }
-    for (const expected of ["Quit to menu", "Dash", "Hold magnet"]) {
+    for (const expected of ["Pause game", "Dash", "Hold magnet"]) {
       if (!gameReady.buttonLabels.some((button) => `${button.ariaLabel || ""} ${button.text || ""}`.includes(expected))) {
         throw new Error(`Gameplay control is missing accessible name: ${expected}`);
       }

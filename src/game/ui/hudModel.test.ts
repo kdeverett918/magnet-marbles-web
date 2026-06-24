@@ -97,7 +97,7 @@ describe("HUD model", () => {
     const state = hud();
 
     expect(humanHudPlayer(state)?.id).toBe(1);
-    expect(objectiveFor(state, humanHudPlayer(state))).toBe("Bank now or risk a bigger haul");
+    expect(objectiveFor(state, humanHudPlayer(state))).toBe("Collect candy marbles, then bank at your goal");
   });
 
   it("uses the human seat for survival danger copy", () => {
@@ -111,6 +111,14 @@ describe("HUD model", () => {
 
     expect(humanHudPlayer(state)?.id).toBe(2);
     expect(objectiveFor(state, humanHudPlayer(state))).toBe("Final life: avoid the rim and use pulses defensively");
+
+    const opening = hud({
+      modeId: "survival",
+      modeName: "Survival",
+      modeKind: "survival",
+      players: [player(0, 0, 3), player(1, 0, 3), player(2, 0, 3), player(3, 0, 3)],
+    });
+    expect(objectiveFor(opening, humanHudPlayer(opening))).toBe("Stay on the table: survive the rim and outlast rivals");
   });
 
   it("falls back to the first visible player if a stale human id is missing", () => {
@@ -123,7 +131,7 @@ describe("HUD model", () => {
     const state = hud();
     const objective = objectiveFor(state, humanHudPlayer(state));
 
-    expect(objectiveAnnouncementFor(state, objective)).toBe("Objective: Bank now or risk a bigger haul.");
+    expect(objectiveAnnouncementFor(state, objective)).toBe("Objective: Collect candy marbles, then bank at your goal.");
 
     const intro = hud({ phase: "intro", modeName: "Battle", modeObjective: "Dash into loaded rivals to steal.", round: 2 });
     expect(objectiveAnnouncementFor(intro, objectiveFor(intro, humanHudPlayer(intro)))).toBe(
@@ -156,7 +164,7 @@ describe("HUD model", () => {
     expect(tutorialCoachStepsFor(hud({ tutorialAssist: false, tutorialStep: "collect" }))).toEqual([]);
   });
 
-  it("prioritizes quick-bank streak copy while the player carries a new haul", () => {
+  it("keeps quick-bank streak urgency out of the main objective copy", () => {
     const state = hud({
       players: [
         player(0, 0),
@@ -166,7 +174,18 @@ describe("HUD model", () => {
       ],
     });
 
-    expect(objectiveFor(state, humanHudPlayer(state))).toBe("Streak 2: bank fast for +1 per marble");
+    expect(objectiveFor(state, humanHudPlayer(state))).toBe("Collect candy marbles, then bank at your goal");
+  });
+
+  it("keeps King Magnet objective aligned with mode-select copy", () => {
+    const state = hud({
+      modeId: "king-magnet",
+      modeName: "King Magnet",
+      modeKind: "king-magnet",
+      players: [player(0, 0), player(1, 0), player(2, 0), player(3, 0)],
+    });
+
+    expect(objectiveFor(state, humanHudPlayer(state))).toBe("Build and carry the largest cluster to become King Magnet");
   });
 
   it("builds compact intro briefings with the actual player marker", () => {
@@ -377,7 +396,7 @@ describe("HUD model", () => {
       detail: "P3: 9 carried",
       tone: "target",
     });
-    expect(objectiveFor(classic, you)).toBe("Bump loaded P3 or build a haul");
+    expect(objectiveFor(classic, you)).toBe("Collect candy marbles, then bank at your goal");
 
     const battle = hud({
       modeId: "battle",
@@ -386,6 +405,14 @@ describe("HUD model", () => {
       players: [player(0, 0), player(1, 0), player(2, 3), player(3, 1)],
     });
     expect(objectiveFor(battle, humanHudPlayer(battle))).toBe("Dash into loaded P3 to steal");
+
+    const battleNoTarget = hud({
+      modeId: "battle",
+      modeName: "Battle",
+      modeKind: "battle",
+      players: [player(0, 0), player(1, 0), player(2, 0), player(3, 0)],
+    });
+    expect(objectiveFor(battleNoTarget, humanHudPlayer(battleNoTarget))).toBe("Collect a load or dash into loaded rivals");
   });
 
   it("does not target teammates or eliminated rivals for steal advice", () => {
